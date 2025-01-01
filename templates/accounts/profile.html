@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% load account_filters %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row">
+        <!-- Profile Information -->
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="mb-4">Profile Information</h2>
+                    
+                    <form method="POST" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Username</label>
+                                <input type="text" class="form-control" value="{{ user.username }}" disabled>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Email</label>
+                                <input type="email" class="form-control" value="{{ user.email }}" disabled>
+                                {% if not user.profile.email_verified %}
+                                    <small class="text-danger">
+                                        Email not verified. 
+                                        <a href="#">Resend verification email</a>
+                                    </small>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">First Name</label>
+                                <input type="text" name="first_name" class="form-control" 
+                                       value="{{ user.first_name }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Last Name</label>
+                                <input type="text" name="last_name" class="form-control" 
+                                       value="{{ user.last_name }}">
+                            </div>
+                        </div>
+                        
+                        {{ profile_form|crispy }}
+                        
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary">Update Profile</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Sidebar -->
+        <div class="col-md-4">
+            <!-- Social Accounts -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h4 class="mb-4">Connected Accounts</h4>
+                    
+                    {% if social_accounts %}
+                        {% for account in social_accounts %}
+                            <div class="d-flex align-items-center mb-3">
+                                <i class="bi bi-{{ account.provider }} me-2"></i>
+                                {{ account.provider|title }}
+                                <button class="btn btn-sm btn-danger ms-auto">Disconnect</button>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-3">
+                            <p class="text-muted mb-3">Connect your social accounts for easier login</p>
+                            <a href="{% url 'social:begin' 'google-oauth2' %}" 
+                               class="btn btn-outline-danger mb-2 w-100">
+                                <i class="bi bi-google me-2"></i>Connect Google
+                            </a>
+                            <a href="{% url 'social:begin' 'facebook' %}" 
+                               class="btn btn-outline-primary w-100">
+                                <i class="bi bi-facebook me-2"></i>Connect Facebook
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Security Settings -->
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h4 class="mb-4">Security</h4>
+                    <a href="#" class="btn btn-outline-primary w-100 mb-3">
+                        <i class="bi bi-key me-2"></i>Change Password
+                    </a>
+                    {% if not user.profile.email_verified %}
+                        <a href="#" class="btn btn-outline-warning w-100">
+                            <i class="bi bi-envelope me-2"></i>Verify Email
+                        </a>
+                    {% endif %}
+                </div>
+            <div class="mb-3">
+    <h5>Two-Factor Authentication</h5>
+    {% if user.profile.two_factor_enabled %}
+        <p class="text-success">
+            <i class="bi bi-shield-check"></i> Enabled
+        </p>
+        <form method="POST" action="{% url 'disable_2fa' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger">
+                Disable 2FA
+            </button>
+        </form>
+    {% else %}
+        <p class="text-warning">
+            <i class="bi bi-shield-exclamation"></i> Not enabled
+        </p>
+        <a href="#" class="btn btn-outline-primary">
+            Enable 2FA
+        </a>
+    {% endif %}
+</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

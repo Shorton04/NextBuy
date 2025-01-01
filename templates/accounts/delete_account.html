@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <div class="text-center mb-4">
+                        <i class="bi bi-exclamation-triangle-fill display-1 text-danger"></i>
+                    </div>
+                    <h2 class="text-center mb-4">Delete Account</h2>
+                    <div class="alert alert-danger">
+                        <h5 class="alert-heading">Warning!</h5>
+                        <p>
+                            This action cannot be undone. All your data will be permanently deleted 
+                            after 30 days. During this period, you can still log in and cancel the 
+                            deletion process.
+                        </p>
+                    </div>
+                    <form method="POST">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">
+                                Type "DELETE" to confirm:
+                            </label>
+                            <input type="text" name="confirm_delete" class="form-control" 
+                                   required pattern="DELETE">
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-danger btn-lg">
+                                Delete My Account
+                            </button>
+                            <a href="{% url 'profile' %}" class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

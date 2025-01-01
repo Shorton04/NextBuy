@@ -1,0 +1,9 @@
+Django==5.0
+django-crispy-forms==2.1
+Pillow==10.1
+python-dotenv==1.0
+stripe==7.10
+django-two-factor-auth==1.15.3
+django-activity-stream==1.4.1
+django-otp==1.2.2
+qrcode==7.4.2
