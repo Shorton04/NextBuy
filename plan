@@ -1,37 +1,45 @@
 FORM f_send_cmx.
   DATA ls_output LIKE LINE OF gt_output.
 
-  LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_output_row>).
+  FIELD-SYMBOLS: <ls_output_row> TYPE any,
+                 <fs_comp>      TYPE any.
+
+  LOOP AT gt_output ASSIGNING <ls_output_row>.
 
     " Local tables / work areas
-    DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
-          lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
-          lt_methods TYPE TABLE OF bapi_alm_order_method,
-          lt_return  TYPE TABLE OF bapiret2.
+    DATA lt_header  TYPE TABLE OF bapi_alm_order_headers_i.
+    DATA lt_status  TYPE TABLE OF bapi_alm_order_usrstat.
+    DATA lt_methods TYPE TABLE OF bapi_alm_order_method.
+    DATA lt_return  TYPE TABLE OF bapiret2.
 
     " method / header work areas
-    DATA: ls_header  TYPE bapi_alm_order_headers_i,
-          ls_method  TYPE bapi_alm_order_method,
-          ls_return  TYPE bapiret2,
-          ls_usrstat TYPE bapi_alm_order_usrstat.
+    DATA ls_header  TYPE bapi_alm_order_headers_i.
+    DATA ls_method  TYPE bapi_alm_order_method.
+    DATA ls_return  TYPE bapiret2.
+    DATA ls_usrstat TYPE bapi_alm_order_usrstat.
+
+    " RTTS helpers
+    DATA lo_struct TYPE REF TO cl_abap_structdescr.
+    DATA lt_comp   TYPE cl_abap_structdescr=>component_table.
+    DATA ls_comp   LIKE LINE OF lt_comp.
+
+    " reference fields
+    DATA lv_refno  TYPE string.
+    DATA lt_fields TYPE TABLE OF string.
+    DATA lv_field  TYPE string.
 
     CLEAR: lt_header, lt_status, lt_methods, lt_return, ls_usrstat.
 
-    " ---------------------------------------------------------
     " Header: tell BAPI which order to update (minimal)
-    " ---------------------------------------------------------
     ls_header-orderid = <ls_output_row>-aufnr.
     APPEND ls_header TO lt_header.
 
-    " ---------------------------------------------------------
-    " Dynamic field assignment using RTTS
-    " ---------------------------------------------------------
-    FIELD-SYMBOLS: <fs_comp> TYPE any.
+    " reference value
+    lv_refno = '000002'.
 
-    DATA(lo_struct) = cl_abap_structdescr=>describe_by_data( ls_usrstat ).
-    DATA(lt_comp)   TYPE abap_compdescr_tab.
+    " Describe structure and get components
+    lo_struct = cl_abap_structdescr=>describe_by_data( ls_usrstat ).
     lt_comp = lo_struct->components.
-    DATA(ls_comp)   TYPE abap_compdescr.
 
     " 1) set order identifier (ORDERID or OBJNR)
     READ TABLE lt_comp INTO ls_comp WITH KEY name = 'ORDERID'.
@@ -42,11 +50,11 @@ FORM f_send_cmx.
       READ TABLE lt_comp INTO ls_comp WITH KEY name = 'OBJNR'.
       IF sy-subrc = 0.
         ASSIGN COMPONENT 'OBJNR' OF STRUCTURE ls_usrstat TO <fs_comp>.
-        <fs_comp> = <ls_output_row>-aufnr. " adjust if proper OBJNR is needed
+        <fs_comp> = <ls_output_row>-aufnr.
       ENDIF.
     ENDIF.
 
-    " 2) set user status code
+    " 2) set user status code (try variants)
     READ TABLE lt_comp INTO ls_comp WITH KEY name = 'USER_ST'.
     IF sy-subrc = 0.
       ASSIGN COMPONENT 'USER_ST' OF STRUCTURE ls_usrstat TO <fs_comp>.
@@ -65,12 +73,12 @@ FORM f_send_cmx.
       ENDIF.
     ENDIF.
 
-    " 3) set reference number
-    DATA(lv_refno) TYPE string VALUE '000002'.
-    DATA: lt_fields TYPE STANDARD TABLE OF string,
-          lv_field  TYPE string.
-
-    lt_fields = VALUE #( ( 'REFNUMBER' ) ( 'REFNO' ) ( 'REFNR' ) ( 'REF' ) ).
+    " 3) set reference number (try multiple field names)
+    CLEAR lt_fields.
+    APPEND 'REFNUMBER' TO lt_fields.
+    APPEND 'REFNO'     TO lt_fields.
+    APPEND 'REFNR'     TO lt_fields.
+    APPEND 'REF'       TO lt_fields.
 
     LOOP AT lt_fields INTO lv_field.
       READ TABLE lt_comp INTO ls_comp WITH KEY name = lv_field.
@@ -84,9 +92,7 @@ FORM f_send_cmx.
     " append the dynamic row into the statically typed table
     APPEND ls_usrstat TO lt_status.
 
-    " ---------------------------------------------------------
     " Build methods table — must match refnumber
-    " ---------------------------------------------------------
     CLEAR ls_method.
     ls_method-refnumber  = '000001'.
     ls_method-objecttype = 'HEADER'.
@@ -108,9 +114,7 @@ FORM f_send_cmx.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
-    " ---------------------------------------------------------
     " Call BAPI
-    " ---------------------------------------------------------
     CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
       TABLES
         it_header     = lt_header
