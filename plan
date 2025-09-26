@@ -1,0 +1,33 @@
+*&---------------------------------------------------------------------*
+*& Report ZIN_CMX_MAINTENANCE_PLAN
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zin_cmx_maintenance_plan.
+
+*----------------------------------------------------------------------*
+*                           Includes                                   *
+*----------------------------------------------------------------------*
+INCLUDE: zin_cmx_maintenance_plan_sel,
+         zin_cmx_maintenance_plan_top,
+         zin_cmx_maintenance_planf01.
+
+*----------------------------------------------------------------------*
+*                           INITIALIZATION.                            *
+*----------------------------------------------------------------------*
+INITIALIZATION.
+
+  PERFORM f_default_time.
+
+*----------------------------------------------------------------------*
+*                     START-OF-SELECTION                               *
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+
+*  PERFORM f_get_iflo_data. "Get functional location data
+
+*  PERFORM f_get_equi_data. "Get equpment data
+  PERFORM f_get_data.
+*  PERFORM f_filter_data.   "Filter data
+
+  PERFORM f_out_data.      "Display result
