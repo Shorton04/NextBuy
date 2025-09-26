@@ -1,6 +1,6 @@
 FORM f_send_cmx.
-  " Make sure this matches your table definition of gt_output!
-  FIELD-SYMBOLS: <ls_output_row> TYPE zin_cmx_workorder, " <-- adjust if needed
+  " match the type of your internal table gt_output
+  FIELD-SYMBOLS: <ls_output_row> TYPE ty_output, "
                  <fs_comp>      TYPE any.
 
   DATA: ls_output LIKE LINE OF gt_output.
@@ -96,12 +96,19 @@ FORM f_send_cmx.
     APPEND ls_usrstat TO lt_status.
 
     " ------------------------------
-    " Methods table (only CHANGE + SAVE are valid for HEADER)
+    " Methods table
     " ------------------------------
     CLEAR ls_method.
     ls_method-refnumber  = '000001'.
     ls_method-objecttype = 'HEADER'.
     ls_method-method     = 'CHANGE'.
+    ls_method-objectkey  = <ls_output_row>-aufnr.
+    APPEND ls_method TO lt_methods.
+
+    CLEAR ls_method.
+    ls_method-refnumber  = lv_refno.
+    ls_method-objecttype = 'HEADER'.
+    ls_method-method     = 'USERSTATUS'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
