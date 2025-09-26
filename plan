@@ -15,61 +15,59 @@ FORM f_send_cmx.
     " method / header work areas (static, always safe)
     DATA: ls_header TYPE bapi_alm_order_headers_i,
           ls_method TYPE bapi_alm_order_method,
-          ls_return TYPE bapiret2.
+          ls_return TYPE bapiret2,
+          ls_usrstat TYPE bapi_alm_order_usrstat.
 
-    CLEAR: lt_header, lt_status, lt_methods, lt_return.
+    CLEAR: lt_header, lt_status, lt_methods, lt_return, ls_usrstat.
 
     " ---------------------------------------------------------
     " Header: tell BAPI which order to update (minimal)
     " ---------------------------------------------------------
-    CLEAR ls_header.
     ls_header-orderid = <ls_output_row>-aufnr.
     APPEND ls_header TO lt_header.
 
     " ---------------------------------------------------------
-    " Build dynamic USERSTATUS row (type = bapi_alm_order_usrstat)
+    " Build dynamic USERSTATUS row safely
     " ---------------------------------------------------------
-    DATA lr_usrstat TYPE REF TO bapi_alm_order_usrstat.
-    FIELD-SYMBOLS: <fs_usrstat> TYPE bapi_alm_order_usrstat,
-                   <fs_comp>    TYPE any.
+    FIELD-SYMBOLS: <fs_comp> TYPE any.
 
-    CREATE DATA lr_usrstat.
-    ASSIGN lr_usrstat->* TO <fs_usrstat>.
-
-    " 1) set order identifier (try ORDERID then OBJNR)
-    IF ASSIGN COMPONENT 'ORDERID' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
+    " 1) set order identifier (ORDERID or OBJNR)
+    IF cl_abap_structdescr=>describe_by_data( ls_usrstat )->get_components( )->find( 'ORDERID' ) IS NOT INITIAL.
+      ASSIGN COMPONENT 'ORDERID' OF STRUCTURE ls_usrstat TO <fs_comp>.
       <fs_comp> = <ls_output_row>-aufnr.
-    ELSEIF ASSIGN COMPONENT 'OBJNR' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
+    ELSEIF cl_abap_structdescr=>describe_by_data( ls_usrstat )->get_components( )->find( 'OBJNR' ) IS NOT INITIAL.
+      ASSIGN COMPONENT 'OBJNR' OF STRUCTURE ls_usrstat TO <fs_comp>.
       TRY.
           <fs_comp> = <ls_output_row>-aufnr.
         CATCH cx_sy_move_cast_error.
-          " fallback logic for OBJNR if needed
+          " optional: build proper OBJNR
       ENDTRY.
     ENDIF.
 
-    " 2) set the internal user status code (try standard names)
-    IF ASSIGN COMPONENT 'USER_ST' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
-      <fs_comp> = 'E0014'.            " internal code for CMXS
-    ELSEIF ASSIGN COMPONENT 'USERSTATUS' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
+    " 2) set user status code
+    IF cl_abap_structdescr=>describe_by_data( ls_usrstat )->get_components( )->find( 'USER_ST' ) IS NOT INITIAL.
+      ASSIGN COMPONENT 'USER_ST' OF STRUCTURE ls_usrstat TO <fs_comp>.
       <fs_comp> = 'E0014'.
-    ELSEIF ASSIGN COMPONENT 'USER_ST_TEXT' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
-      <fs_comp> = 'CMXS'.             " fallback text
+    ELSEIF cl_abap_structdescr=>describe_by_data( ls_usrstat )->get_components( )->find( 'USERSTATUS' ) IS NOT INITIAL.
+      ASSIGN COMPONENT 'USERSTATUS' OF STRUCTURE ls_usrstat TO <fs_comp>.
+      <fs_comp> = 'E0014'.
+    ELSEIF cl_abap_structdescr=>describe_by_data( ls_usrstat )->get_components( )->find( 'USER_ST_TEXT' ) IS NOT INITIAL.
+      ASSIGN COMPONENT 'USER_ST_TEXT' OF STRUCTURE ls_usrstat TO <fs_comp>.
+      <fs_comp> = 'CMXS'.
     ENDIF.
 
-    " 3) set the reference number so BAPI can link method -> data
-    DATA lv_refno TYPE string VALUE '000002'. " must match method refnumber
-    IF ASSIGN COMPONENT 'REFNUMBER' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
-      <fs_comp> = lv_refno.
-    ELSEIF ASSIGN COMPONENT 'REFNO' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
-      <fs_comp> = lv_refno.
-    ELSEIF ASSIGN COMPONENT 'REFNR' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
-      <fs_comp> = lv_refno.
-    ELSEIF ASSIGN COMPONENT 'REF' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
-      <fs_comp> = lv_refno.
-    ENDIF.
+    " 3) set reference number
+    DATA lv_refno TYPE string VALUE '000002'.
+    LOOP AT VALUE #( ( 'REFNUMBER' ) ( 'REFNO' ) ( 'REFNR' ) ( 'REF' ) ) INTO DATA(lv_field).
+      IF cl_abap_structdescr=>describe_by_data( ls_usrstat )->get_components( )->find( lv_field ) IS NOT INITIAL.
+        ASSIGN COMPONENT lv_field OF STRUCTURE ls_usrstat TO <fs_comp>.
+        <fs_comp> = lv_refno.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
 
     " append the dynamic row into the statically typed table
-    APPEND <fs_usrstat> TO lt_status.
+    APPEND ls_usrstat TO lt_status.
 
     " ---------------------------------------------------------
     " Build methods table — must match refnumber
