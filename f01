@@ -1,0 +1,705 @@
+*&---------------------------------------------------------------------*
+*& Include          ZIN_CMX_MAINTENANCE_PLANF01
+*&---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*& Form F_DEFAULT_TIME
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM f_default_time .
+  DATA: lv_now_time TYPE sy-uzeit,
+        lv_to_time  TYPE sy-uzeit.
+  " Get current system time
+  lv_now_time = sy-uzeit + 1.
+  lv_to_time = sy-uzeit + 3600.
+
+  APPEND VALUE #( sign = 'I'         option = 'BT'
+                  low  = lv_now_time high   = lv_to_time ) TO so_time.
+  DATA(lv_date) = sy-datum.
+  IF lv_to_time <= 0.
+    lv_date = sy-datum + 1.
+  ENDIF.
+  APPEND VALUE #( sign = 'I'      option = 'BT'
+                  low  = sy-datum high   = lv_date ) TO so_date.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form F_GET_FL_DATA
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM f_get_iflo_data .
+
+  SELECT
+    a~mandt,
+    a~clfnobjectid,
+    d~lastchangedatetime AS lastchangedatetime1,
+    e~createdbyuser AS cmaintplandex_createdbyuser,
+    e~lastchangedate AS cmaintplandex_lastchangedate,
+    e~lastchangedbyuser AS cmaintplandex_lastchangedbyuse,
+    e~lastchangedatetime AS lastchangedatetime2,
+    b~functionallocation,
+    b~maintobjectinternalid,
+    c~functionallocationlabelname,
+    d~maintenanceitem,
+    d~mainworkcenter,
+    d~equipment,
+    d~createdbyuser,
+    d~lastchangedate,
+    d~lastchangedbyuser,
+    d~maintenanceitemdescription,
+    d~maintenanceplan,
+    d~maintenanceordertype,
+    d~maintenanceplant,
+    e~maintenanceplandesc,
+    e~maintplancycrcrrcintervalqty,
+    e~maintplancycrcrrcintervalunit,
+    f~changedocobject,
+    f~changedocobjectclass,
+    f~changedocument,
+    f~creationdate,
+    f~creationtime,
+    g~databasetable,
+    g~changedocdatabasetablefield,
+    g~changedocnewfieldvalue
+    FROM ingcclfn11 AS a
+     LEFT OUTER JOIN ifunctllocation AS b
+      ON b~functionallocation EQ a~clfnobjectid
+     LEFT OUTER JOIN ifuncloclabel AS c
+      ON c~functionallocation EQ b~functionallocation
+     LEFT OUTER JOIN cmaintitemdex AS d
+      ON d~functionallocation EQ b~functionallocation
+     LEFT OUTER JOIN cmaintplandex AS e
+      ON e~maintenanceplan EQ d~maintenanceplan
+     LEFT OUTER JOIN ichangedoc AS f
+      ON f~changedocobject EQ d~maintenanceplan
+      AND f~changedocobjectclass EQ 'MPLAN'
+     LEFT OUTER JOIN ichangedocitem AS g
+      ON g~changedocobject EQ f~changedocobject
+      AND g~changedocument EQ f~changedocument
+      AND g~changedocobjectclass EQ f~changedocobjectclass
+      AND g~databasetable EQ 'MMPT_CD'
+      AND g~changedocdatabasetablefield IN ( 'ZEIEH', 'ZYKL1' )
+    WHERE a~charcinternalid IN @so_atinn
+      AND a~charcvalue IN  @so_atwrt
+      AND d~maintenanceplan IN @so_warpl
+      AND d~maintenanceitem IN @so_wapos
+      AND d~maintenanceplant IN @so_werks
+      AND d~maintenanceordertype IN @so_auart
+      AND b~functionallocation IN @so_floc
+    INTO TABLE @DATA(lt_data).
+
+  IF sy-subrc EQ 0.
+    SORT lt_data BY maintobjectinternalid
+                    equipment
+                    maintenanceplan
+                    maintenanceitem.
+    DELETE ADJACENT DUPLICATES FROM lt_data
+      COMPARING maintobjectinternalid
+                equipment
+                maintenanceplan
+                maintenanceitem.
+
+    LOOP AT lt_data INTO DATA(ls_data).
+
+      IF ls_data-changedocument IS NOT INITIAL AND
+        gs_result-maintenanceplan_order_status  = 'CREATE'.
+      ELSE.
+        gs_result-maintenanceplan_order_status = 'CHANGE'.
+      ENDIF.
+
+      IF ls_data-equipment IS INITIAL.
+        gs_result-maintenanceplan_floc_number   = ls_data-functionallocation
+                                                  && '_' &&
+                                                  ls_data-maintobjectinternalid.
+      ELSE.
+        gs_result-maintenanceplan_floc_number   = ls_data-equipment
+                                                  && '_' &&
+                                                  ls_data-maintobjectinternalid.
+      ENDIF.
+
+      gs_result-maintenanceplan_unit       = ls_data-maintplancycrcrrcintervalunit.
+
+      CASE ls_data-maintplancycrcrrcintervalunit.
+        WHEN 'JHR'.
+          gs_result-maintenanceplan_cycle = ls_data-maintplancycrcrrcintervalqty / 31556952.
+        WHEN 'MON'.
+          gs_result-maintenanceplan_cycle = ls_data-maintplancycrcrrcintervalqty / 2629746.
+        WHEN 'DAY'.
+          gs_result-maintenanceplan_cycle = ls_data-maintplancycrcrrcintervalqty / 86458.
+        WHEN OTHERS.
+      ENDCASE.
+      gs_result-maintenanceplan_item_des   = ls_data-maintenanceitemdescription.
+      gs_result-maintenanceitem            = ls_data-maintenanceitem.
+      gs_result-maintenanceplan            = ls_data-maintenanceplan.
+      gs_result-equipment                  = ls_data-equipment.
+      gs_result-system_id                  = sy-sysid.
+      APPEND gs_result TO gt_result.
+    ENDLOOP.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form f_get_data_eq
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM f_get_equi_data.
+
+*.Adopt this select statement to your needs
+  SELECT
+    a~mandt,
+    a~clfnobjectid,
+    c~equipment AS cmaintitemdex_equipment,
+    c~lastchangedatetime AS lastchangedatetime1,
+    d~createdbyuser AS cmaintplandex_createdbyuser,
+    d~lastchangedate AS cmaintplandex_lastchangedate,
+    d~lastchangedbyuser AS cmaintplandex_lastchangedbyuse,
+    d~lastchangedatetime AS lastchangedatetime2,
+    b~equipment,
+    b~maintobjectinternalid,
+    c~maintenanceitem,
+    c~mainworkcenter,
+    c~createdbyuser,
+    c~lastchangedate,
+    c~lastchangedbyuser,
+    c~maintenanceitemdescription,
+    c~maintenanceplan,
+    c~maintenanceordertype,
+    c~maintenanceplant,
+    d~maintenanceplandesc,
+    d~maintplancycrcrrcintervalqty,
+    d~maintplancycrcrrcintervalunit,
+    e~changedocobject,
+    e~changedocobjectclass,
+    e~changedocument,
+    e~creationdate,
+    e~creationtime,
+    f~databasetable,
+    f~changedocdatabasetablefield,
+    f~changedocnewfieldvalue
+    FROM ingcclfn11 AS a
+     LEFT OUTER JOIN iequipment AS b
+      ON b~equipment EQ a~clfnobjectid
+     LEFT OUTER JOIN cmaintitemdex AS c
+      ON c~equipment EQ b~equipment
+     LEFT OUTER JOIN cmaintplandex AS d
+      ON d~maintenanceplan EQ c~maintenanceplan
+     LEFT OUTER JOIN ichangedoc AS e
+      ON e~changedocobject EQ c~maintenanceplan
+     LEFT OUTER JOIN ichangedocitem AS f
+      ON f~changedocobject EQ e~changedocobject
+      AND f~changedocobjectclass EQ e~changedocobjectclass
+      AND f~changedocument EQ e~changedocument
+    WHERE a~charcinternalid IN @so_atinn
+      AND a~charcvalue IN  @so_atwrt
+      AND a~classtype EQ '002'
+      AND c~maintenanceplan IN @so_warpl
+      AND c~maintenanceitem IN @so_wapos
+      AND c~maintenanceplant IN @so_werks
+      AND c~maintenanceordertype IN @so_auart
+      AND b~equipment IN @so_equnr
+      AND f~changedocobjectclass EQ 'MPLAN'
+      AND f~databasetable EQ 'MMPT_CD'
+      AND f~changedocdatabasetablefield IN ( 'ZEIEH', 'ZYKL1' )
+    INTO TABLE @DATA(lt_equi).
+  IF sy-subrc EQ 0.
+    SORT lt_equi BY maintobjectinternalid
+                   equipment
+                   maintenanceplan
+                   maintenanceitem.
+    DELETE ADJACENT DUPLICATES FROM lt_equi
+      COMPARING maintobjectinternalid
+                equipment
+                maintenanceplan
+                maintenanceitem.
+
+
+    LOOP AT lt_equi INTO DATA(ls_data).
+      IF ls_data-changedocument IS NOT INITIAL AND
+        gs_result-maintenanceplan_order_status  = 'CREATE'.
+      ELSE.
+        gs_result-maintenanceplan_order_status = 'CHANGE'.
+      ENDIF.
+
+      gs_result-maintenanceplan_floc_number   = ls_data-equipment
+                                                && '_' &&
+                                                ls_data-maintobjectinternalid.
+*      gs_result-maintenanceplan_cycle      = ls_data-maintplancycrcrrcintervalqty.
+      gs_result-maintenanceplan_unit       = ls_data-maintplancycrcrrcintervalunit.
+      gs_result-maintenanceplan_item_des   = ls_data-maintenanceitemdescription.
+      gs_result-maintenanceitem             = ls_data-maintenanceitem.
+      gs_result-maintenanceplan            = ls_data-maintenanceplan.
+      gs_result-equipment                  = ls_data-equipment.
+      gs_result-system_id                  = sy-sysid.
+
+      CASE ls_data-maintplancycrcrrcintervalunit.
+        WHEN 'JHR'.
+          gs_result-maintenanceplan_cycle = ls_data-maintplancycrcrrcintervalqty / 31556952.
+        WHEN 'MON'.
+          gs_result-maintenanceplan_cycle = ls_data-maintplancycrcrrcintervalqty / 2629746.
+        WHEN 'DAY'.
+          gs_result-maintenanceplan_cycle = ls_data-maintplancycrcrrcintervalqty / 86458.
+        WHEN OTHERS.
+      ENDCASE.
+
+      APPEND gs_result TO gt_result.
+    ENDLOOP.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form send_to_cpi
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM f_send_to_cpi .
+  DATA: lv_payload TYPE string.
+  DATA: lv_rfc TYPE rfcdest VALUE 'CMX_MaintenancePlan'.
+  DATA: lv_content_value TYPE string VALUE 'application/json'.
+
+  TRY.
+      lv_payload = xco_ku_json=>data->from_abap( gt_payload )->apply( VALUE #(
+                                ( xco_ku_json=>transformation->underscore_to_pascal_case )
+      ) )->to_string( ).
+    CATCH cx_sxml_error INTO DATA(lx_sxml_error).
+  ENDTRY.
+
+  CALL METHOD cl_http_client=>create_by_destination
+    EXPORTING
+      destination              = lv_rfc
+    IMPORTING
+      client                   = DATA(lo_http_client)
+    EXCEPTIONS
+      argument_not_found       = 1
+      destination_not_found    = 2
+      destination_no_authority = 3
+      plugin_not_active        = 4
+      internal_error           = 5
+      OTHERS                   = 6.
+
+  IF sy-subrc <> 0.
+
+  ENDIF.
+
+  CALL METHOD lo_http_client->request->set_header_field
+    EXPORTING
+      name  = '~request_method'
+      value = 'POST'.
+
+  CALL METHOD lo_http_client->request->set_header_field
+    EXPORTING
+      name  = 'Content-Type'
+      value = lv_content_value.
+
+  CALL METHOD lo_http_client->request->set_cdata
+    EXPORTING
+      data = lv_payload.
+
+  CALL METHOD lo_http_client->send
+    EXCEPTIONS
+      http_communication_failure = 1
+      http_invalid_state         = 2
+      http_processing_failed     = 3
+      http_invalid_timeout       = 4
+      OTHERS                     = 5.
+  IF sy-subrc <> 0.
+
+  ENDIF.
+
+  CALL METHOD lo_http_client->receive
+    EXCEPTIONS
+      http_communication_failure = 1
+      http_invalid_state         = 2
+      http_processing_failed     = 3
+      OTHERS                     = 4.
+
+  lo_http_client->response->get_status( IMPORTING code = DATA(lv_status) ).
+
+  IF lv_status = '200'.
+
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form f_filter_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM f_filter_data .
+  IF gt_result[] IS NOT INITIAL.
+    DATA(lt_result) = gt_result[].
+    DATA(lt_pay) = gt_result[].
+    CLEAR lt_pay[].
+
+    DELETE lt_result WHERE equipment <> space.
+    DELETE ADJACENT DUPLICATES FROM lt_result COMPARING maintenanceplan maintenanceitem.
+
+    LOOP AT gt_result INTO gs_result.
+      IF gs_result-equipment IS INITIAL.
+        READ TABLE lt_result INTO DATA(ls_req) WITH KEY maintenanceplan = gs_result-maintenanceplan
+                                                         maintenanceitem = gs_result-maintenanceitem.
+        IF sy-subrc EQ 0.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+      APPEND gs_result TO lt_pay.
+
+    ENDLOOP.
+
+    gt_result[] =  lt_pay[].
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_out_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM f_out_data .
+  IF gt_result[] IS NOT INITIAL.
+    SORT gt_result BY
+      maintenanceplan maintenanceplan_order_status.
+    DELETE ADJACENT DUPLICATES FROM  gt_result
+        COMPARING maintenanceplan maintenanceplan_order_status.
+    gt_payload = CORRESPONDING #( gt_result ).
+    IF p_test EQ abap_true.
+      PERFORM f_display_alv. "dsipaly records in ALV
+    ELSE.
+      PERFORM f_send_to_cpi. "Send Data to CPI
+    ENDIF.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form F_DISPLAY_ALV
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM f_display_alv .
+
+  TRY .
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = DATA(lo_salv)  " Basis Class Simple ALV Tables
+        CHANGING
+          t_table      = gt_payload
+      ).
+    CATCH cx_salv_msg.                  " ALV: General Error Class with Message
+  ENDTRY.
+
+  PERFORM set_columns CHANGING lo_salv.
+
+  lo_salv->get_columns( )->set_optimize( ).
+
+  lo_salv->get_functions( )->set_all( ).
+
+  lo_salv->display( ).
+
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form set_columns
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      <-- GR_SALV
+*&---------------------------------------------------------------------*
+FORM set_columns CHANGING p_salv TYPE REF TO cl_salv_table.
+  TRY .
+      "set column names
+      DATA(lo_columns) = p_salv->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+      DATA(lo_column) = lo_columns->get_column( 'MAINTENANCEPLAN_ORDER_STATUS' ).
+      lo_column->set_long_text( value = 'Order_Status' ).
+      lo_column->set_fixed_header_text( value = 'L' ).
+
+
+      "set column names
+*      lo_columns = p_salv->get_columns( ).
+*      lo_columns->set_optimize( abap_true ).
+*      lo_column = lo_columns->get_column( 'MAINTENANCEPLAN_ORDER_STATUS' ).
+*      lo_column->set_long_text( value = 'Order_Status' ).
+*      lo_column->set_fixed_header_text( value = 'L' ).
+
+      "set column names
+      lo_columns = p_salv->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+      lo_column = lo_columns->get_column( 'MAINTENANCEPLAN_FLOC_NUMBER' ).
+      lo_column->set_long_text( value = 'Maintenance Technical Object' ).
+      lo_column->set_fixed_header_text( value = 'L' ).
+
+*      "set column names***
+*      lo_columns = p_salv->get_columns( ).
+*      lo_columns->set_optimize( abap_true ).
+*      lo_column = lo_columns->get_column( 'EQUIPMENT' ).
+*      lo_column->set_long_text( value = 'Technical Object' ).
+*      lo_column->set_fixed_header_text( value = 'L' ).
+
+      "set column names
+      lo_columns = p_salv->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+      lo_column = lo_columns->get_column( 'MAINTENANCEPLAN_CYCLE' ).
+      lo_column->set_long_text( value = 'Maintenance Plan Cycle' ).
+      lo_column->set_fixed_header_text( value = 'L' ).
+
+      "set column names
+      lo_columns = p_salv->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+      lo_column = lo_columns->get_column( 'MAINTENANCEPLAN_UNIT' ).
+      lo_column->set_long_text( value = 'Maintenance Plan Unit' ).
+      lo_column->set_fixed_header_text( value = 'L' ).
+
+      "set column names
+      lo_columns = p_salv->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+      lo_column = lo_columns->get_column( 'MAINTENANCEPLAN_ITEM_DES' ).
+      lo_column->set_long_text( value = 'Maintenance Item Description' ).
+      lo_column->set_fixed_header_text( value = 'L' ).
+
+*      "set column names ***
+*      lo_columns = p_salv->get_columns( ).
+*      lo_columns->set_optimize( abap_true ).
+*      lo_column = lo_columns->get_column( 'MAINTENANCEPLAN' ).
+*      lo_column->set_long_text( value = 'Maintenance Plan' ).
+*      lo_column->set_fixed_header_text( value = 'L' ).
+*
+*      "set column names
+*      lo_columns = p_salv->get_columns( ).
+*      lo_columns->set_optimize( abap_true ).
+*      lo_column = lo_columns->get_column( 'MAINTENANCEITEM ' ).
+*      lo_column->set_long_text( value = 'Maintenance Item' ).
+*      lo_column->set_fixed_header_text( value = 'L' ).
+
+      "set column names
+      lo_columns = p_salv->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
+      lo_column = lo_columns->get_column( 'SYSTEM_ID' ).
+      lo_column->set_long_text( value = 'System ID' ).
+      lo_column->set_fixed_header_text( value = 'L' ).
+
+    CATCH cx_salv_not_found.
+  ENDTRY.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM f_get_data .
+  TYPES: BEGIN OF ty_chars,
+          atnam TYPE atnam,
+          atwrt TYPE atwrt,
+         END OF ty_chars.
+  DATA lv_tzone TYPE timezone.
+  DATA lt_chars TYPE STANDARD TABLE OF ty_chars.
+  DATA lv_cycle TYPE char22.
+  CALL FUNCTION 'GET_SYSTEM_TIMEZONE'
+    IMPORTING
+      timezone = lv_tzone.
+
+  "get char pair value
+  LOOP AT so_atinn INTO DATA(ls_char).
+    IF line_exists( so_atwrt[ sy-tabix ] ).
+      APPEND VALUE #( atnam = ls_char-low
+                      atwrt = so_atwrt[ sy-tabix ]-low )
+          TO lt_chars.
+    ENDIF.
+  ENDLOOP.
+  CHECK lt_chars IS NOT INITIAL.
+  "get tech objects
+  SELECT CAST( b~equipment AS CHAR( 40 ) ) AS technicalobject,
+         CAST( b~equipment AS CHAR( 40 ) ) AS technicalobjectlabel,
+         \_equipment[ ONE TO ONE ]-maintobjectinternalid
+     FROM @lt_chars AS a
+     INNER JOIN r_equipmentclfncharvaluetp AS b ON b~characteristic = a~atnam
+                                               AND b~charcvalue = a~atwrt
+    WHERE b~equipment IN @so_equnr
+  INTO TABLE @DATA(lt_equip).
+
+  SELECT CAST( b~functionallocation AS CHAR( 40 ) ) AS technicalobject,
+         CAST( b~functionallocationlabelname AS CHAR( 40 ) ) AS technicalobjectlabel,
+         c~maintobjectinternalid
+    FROM @lt_chars AS a
+     INNER JOIN r_funcnllocclfncharvaluetp AS b ON b~characteristic = a~atnam
+                                                AND b~charcvalue = a~atwrt
+      INNER JOIN i_functionallocation AS c
+            ON c~functionallocation = b~functionallocation
+    WHERE b~functionallocation IN @so_floc
+    INTO TABLE @DATA(lt_tech).
+
+  IF lt_equip IS NOT INITIAL.
+    APPEND LINES OF lt_equip TO lt_tech.
+  ENDIF.
+  CHECK lt_tech IS NOT INITIAL.
+  "get changed mplans
+  SELECT a~technicalobject,
+         a~technicalobjectlabel,
+         a~maintobjectinternalid,
+         b~maintenanceplan,
+         b~maintenanceitem,
+         b~maintenanceitemdescription,
+         b~functionallocation,
+         b~equipment,
+         c~changedocument,
+         c~changedocnewfieldvalue,
+         c~changedocpreviousfieldvalue,
+         c~creationdate,
+         c~creationtime,
+         d~maintplancycrcrrcintervalqty,
+         d~maintplancycrcrrcintervalunit
+  FROM @lt_tech AS a
+    INNER JOIN c_maintenanceitemdex AS b ON b~equipment = a~technicalobject
+                                OR b~functionallocation = a~technicalobject
+    INNER JOIN i_maintplanchghistory AS c ON b~maintenanceplan = c~changedocobject AND
+                                        c~changedocobjectclass = 'MPLAN' AND
+                                               c~databasetable = 'MMPT_CD' AND
+                                 c~changedocdatabasetablefield = 'ZYKL1'
+    INNER JOIN c_maintenanceplandex AS d ON d~maintenanceplan = b~maintenanceplan
+  WHERE b~maintenanceplan <> '' AND ( a~technicalobject = b~equipment OR
+        (  b~equipment = ''  AND b~functionallocation = a~technicalobject ) )
+      AND b~mainworkcenter IN @so_arbpl
+      AND b~maintenanceitem IN @so_wapos
+      AND b~maintenanceplan IN @so_warpl
+      AND b~maintenanceplant IN @so_werks
+      AND b~maintenanceordertype IN @so_auart
+      AND c~creationdate IN @so_date
+      AND c~creationtime IN @so_time
+    INTO TABLE @DATA(lt_changed).
+" get created mplans
+  SELECT a~technicalobject,
+       a~technicalobjectlabel,
+       a~maintobjectinternalid,
+       b~maintenanceplan,
+       b~maintenanceitem,
+       b~maintenanceitemdescription,
+       b~functionallocation,
+       b~equipment,
+      tstmp_to_dats(
+         tstmp    = c~lastchangedatetime,
+         tzone    = @lv_tzone,
+         client   = @sy-mandt,
+         on_error = @sql_tstmp_to_dats=>set_to_null ) AS creationdate,
+       tstmp_to_tims(
+         tstmp    = c~lastchangedatetime,
+         tzone    = @lv_tzone,
+         client   = @sy-mandt,
+         on_error = @sql_tstmp_to_tims=>set_to_null ) AS creationtime,
+       c~maintplancycrcrrcintervalqty,
+       c~maintplancycrcrrcintervalunit
+FROM @lt_tech AS a
+  INNER JOIN c_maintenanceitemdex AS b ON b~equipment = a~technicalobject
+                              OR b~functionallocation = a~technicalobject
+  INNER JOIN c_maintenanceplandex AS c ON c~maintenanceplan = b~maintenanceplan
+WHERE b~maintenanceplan <> '' AND ( a~technicalobject = b~equipment OR
+      (  b~equipment = ''  AND b~functionallocation = a~technicalobject ) )
+    AND c~lastchangedate = '00000000'
+    AND b~mainworkcenter IN @so_arbpl
+    AND b~maintenanceitem IN @so_wapos
+    AND b~maintenanceplan IN @so_warpl
+    AND b~maintenanceplant IN @so_werks
+    AND b~maintenanceordertype IN @so_auart
+    AND tstmp_to_tims(
+         tstmp    = c~lastchangedatetime,
+         tzone    = @lv_tzone,
+         client   = @sy-mandt,
+         on_error = @sql_tstmp_to_tims=>set_to_null ) IN @so_time
+    AND tstmp_to_dats(
+         tstmp    = c~lastchangedatetime,
+         tzone    = @lv_tzone,
+         client   = @sy-mandt,
+         on_error = @sql_tstmp_to_dats=>set_to_null ) IN @so_date
+  INTO TABLE @DATA(lt_created).
+
+  LOOP AT lt_changed INTO DATA(ls_changed).
+     gs_result-maintenanceplan_order_status = 'CHANGE'.
+     gs_result-maintenanceplan_floc_number = ls_changed-technicalobjectlabel
+                                             && '_' &&
+                                             ls_changed-maintobjectinternalid.
+     CALL FUNCTION 'FLTP_CHAR_CONVERSION_FROM_SI'
+       EXPORTING
+            char_unit       = ls_changed-maintplancycrcrrcintervalunit
+            decimals        = 0
+            exponent        = 0
+            fltp_value_si   = ls_changed-maintplancycrcrrcintervalqty
+            indicator_value = abap_true
+            masc_symbol     = ' '
+       IMPORTING
+            char_value      = lv_cycle.
+     gs_result-maintenanceplan_cycle = lv_cycle.
+*     CASE ls_changed-maintplancycrcrrcintervalunit.
+*        WHEN 'JHR'.
+*          gs_result-maintenanceplan_cycle = ls_changed-maintplancycrcrrcintervalqty / 31556952.
+*        WHEN 'MON'.
+*          gs_result-maintenanceplan_cycle = ls_changed-maintplancycrcrrcintervalqty / 2629746.
+*        WHEN 'DAY'.
+*          gs_result-maintenanceplan_cycle = ls_changed-maintplancycrcrrcintervalqty / 86458.
+*        WHEN OTHERS.
+*      ENDCASE.
+     gs_result-maintenanceplan            = ls_changed-maintenanceplan.
+     gs_result-maintenanceplan_unit       = ls_changed-maintplancycrcrrcintervalunit.
+     gs_result-maintenanceplan_item_des   = ls_changed-maintenanceitemdescription.
+     gs_result-system_id                  = sy-sysid.
+     APPEND gs_result TO gt_result.
+     CLEAR lv_cycle.
+  ENDLOOP.
+  CLEAR gs_result.
+  LOOP AT lt_created INTO DATA(ls_created).
+     gs_result-maintenanceplan_order_status = 'CREATE'.
+     gs_result-maintenanceplan_floc_number = ls_created-technicalobjectlabel
+                                             && '_' &&
+                                             ls_created-maintobjectinternalid.
+     CALL FUNCTION 'FLTP_CHAR_CONVERSION_FROM_SI'
+       EXPORTING
+            char_unit       = ls_created-maintplancycrcrrcintervalunit
+            decimals        = 0
+            exponent        = 0
+            fltp_value_si   = ls_created-maintplancycrcrrcintervalqty
+            indicator_value = abap_true
+            masc_symbol     = ' '
+       IMPORTING
+            char_value      = lv_cycle.
+     gs_result-maintenanceplan_cycle = lv_cycle.
+*     CASE ls_created-maintplancycrcrrcintervalunit.
+*        WHEN 'JHR'.
+*          gs_result-maintenanceplan_cycle = ls_created-maintplancycrcrrcintervalqty / 31556952.
+*        WHEN 'MON'.
+*          gs_result-maintenanceplan_cycle = ls_created-maintplancycrcrrcintervalqty / 2629746.
+*        WHEN 'DAY'.
+*          gs_result-maintenanceplan_cycle = ls_created-maintplancycrcrrcintervalqty / 86458.
+*        WHEN OTHERS.
+*      ENDCASE.
+     gs_result-maintenanceplan            = ls_created-maintenanceplan.
+     gs_result-maintenanceplan_unit       = ls_created-maintplancycrcrrcintervalunit.
+     gs_result-maintenanceplan_item_des   = ls_created-maintenanceitemdescription.
+     gs_result-system_id                  = sy-sysid.
+     APPEND gs_result TO gt_result.
+     CLEAR lv_cycle.
+  ENDLOOP.
+ENDFORM.
