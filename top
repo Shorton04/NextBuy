@@ -1,0 +1,30 @@
+*&---------------------------------------------------------------------*
+*& Include          ZIN_CMX_MAINTENANCE_PLAN_TOP
+*&---------------------------------------------------------------------*
+
+
+TYPES: BEGIN OF ty_result,
+         maintenanceplan_order_status TYPE char10,    "Order_Status
+         maintenanceplan_floc_number  TYPE string,    "FLoc_Number
+         equipment                    TYPE string,    "FLoc_Number
+         maintenanceplan_cycle        TYPE i,         "Cycle
+         maintenanceplan_unit         TYPE dzeieh,    "Unit
+         maintenanceplan_item_des     TYPE string,    "Description
+         maintenanceplan              TYPE string,    "Item
+         maintenanceitem              TYPE string,    "Item
+         system_id                    TYPE char10,    "System ID
+       END OF ty_result.
+
+TYPES: BEGIN OF ty_payload,
+         maintenanceplan_order_status TYPE char10,    "Order_Status
+         maintenanceplan_floc_number  TYPE string,    "FLoc_Number
+         maintenanceplan_cycle        TYPE i,         "Cycle
+         maintenanceplan_unit         TYPE dzeieh,    "Unit
+         maintenanceplan_item_des     TYPE string,    "Description
+         system_id                    TYPE char10,    "System ID
+       END OF ty_payload.
+
+
+DATA: gt_result  TYPE STANDARD TABLE OF ty_result WITH EMPTY KEY,
+      gt_payload TYPE STANDARD TABLE OF ty_payload WITH EMPTY KEY,
+      gs_result TYPE ty_result.
