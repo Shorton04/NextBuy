@@ -28,27 +28,22 @@ FORM f_send_cmx.
 
     " ---------------------------------------------------------
     " Build dynamic USERSTATUS row (type = bapi_alm_order_usrstat)
-    " - we create the work area dynamically and set component(s)
-    " - this avoids compile-time errors when structure variants differ
     " ---------------------------------------------------------
-    DATA lr_usrstat TYPE REF TO data.
-    FIELD-SYMBOLS: <fs_usrstat> TYPE any,
+    DATA lr_usrstat TYPE REF TO bapi_alm_order_usrstat.
+    FIELD-SYMBOLS: <fs_usrstat> TYPE bapi_alm_order_usrstat,
                    <fs_comp>    TYPE any.
 
-    CREATE DATA lr_usrstat TYPE bapi_alm_order_usrstat.
+    CREATE DATA lr_usrstat.
     ASSIGN lr_usrstat->* TO <fs_usrstat>.
 
     " 1) set order identifier (try ORDERID then OBJNR)
     IF ASSIGN COMPONENT 'ORDERID' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
       <fs_comp> = <ls_output_row>-aufnr.
     ELSEIF ASSIGN COMPONENT 'OBJNR' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
-      " OBJNR often requires the 'OR' prefix + zero-padded AUFNR -- some systems accept AUFNR directly
       TRY.
           <fs_comp> = <ls_output_row>-aufnr.
         CATCH cx_sy_move_cast_error.
-          " if needed, build OBJNR properly here (example: 'OR' + 12 digit AUFNR)
-          " DATA(lv_objnr) = |OR{ <ls_output_row>-aufnr ALPHA = IN }|.
-          " <fs_comp> = lv_objnr.
+          " fallback logic for OBJNR if needed
       ENDTRY.
     ENDIF.
 
@@ -58,13 +53,11 @@ FORM f_send_cmx.
     ELSEIF ASSIGN COMPONENT 'USERSTATUS' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
       <fs_comp> = 'E0014'.
     ELSEIF ASSIGN COMPONENT 'USER_ST_TEXT' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
-      " If only text exists, write the text value (fallback)
-      <fs_comp> = 'CMXS'.
+      <fs_comp> = 'CMXS'.             " fallback text
     ENDIF.
 
     " 3) set the reference number so BAPI can link method -> data
-    "    try several common component names until one matches
-    DATA lv_refno TYPE string VALUE '000002'. " must match method refnumber below
+    DATA lv_refno TYPE string VALUE '000002'. " must match method refnumber
     IF ASSIGN COMPONENT 'REFNUMBER' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
       <fs_comp> = lv_refno.
     ELSEIF ASSIGN COMPONENT 'REFNO' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
@@ -73,18 +66,13 @@ FORM f_send_cmx.
       <fs_comp> = lv_refno.
     ELSEIF ASSIGN COMPONENT 'REF' OF STRUCTURE <fs_usrstat> TO <fs_comp>.
       <fs_comp> = lv_refno.
-    " else: structure has no ref field — we will rely on method order (less reliable)
     ENDIF.
 
     " append the dynamic row into the statically typed table
     APPEND <fs_usrstat> TO lt_status.
 
     " ---------------------------------------------------------
-    " Build methods table — method REFNUMBER must match userstatus ref (if we set one)
-    " We'll use:
-    "  - 000001 : prepare header change (optional)
-    "  - 000002 : USERSTATUS (must link to lt_status row)
-    "  - 000003 : SAVE
+    " Build methods table — must match refnumber
     " ---------------------------------------------------------
     CLEAR ls_method.
     ls_method-refnumber  = '000001'.
@@ -94,16 +82,16 @@ FORM f_send_cmx.
     APPEND ls_method TO lt_methods.
 
     CLEAR ls_method.
-    ls_method-refnumber  = lv_refno.            " '000002' - must match the userstatus row ref
-    ls_method-objecttype = 'HEADER'.            " use HEADER level
-    ls_method-method     = 'USERSTATUS'.        " change user status
+    ls_method-refnumber  = lv_refno.            
+    ls_method-objecttype = 'HEADER'.            
+    ls_method-method     = 'USERSTATUS'.        
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
     CLEAR ls_method.
     ls_method-refnumber  = '000003'.
     ls_method-objecttype = 'HEADER'.
-    ls_method-method     = 'SAVE'.              " required by BAPI
+    ls_method-method     = 'SAVE'.              
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
