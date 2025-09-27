@@ -1,101 +1,98 @@
-FORM f_send_cmx.
-  DATA ls_output LIKE LINE OF gt_output.
-
-  LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_output_row>).
-
-    DATA: lt_header     TYPE TABLE OF bapi_alm_order_headers_i,
-          lt_header_up  TYPE TABLE OF bapi_alm_order_headers_up,
-          lt_status     TYPE TABLE OF bapi_alm_order_usrstat,
-          lt_methods    TYPE TABLE OF bapi_alm_order_method,
-          ls_header     TYPE bapi_alm_order_headers_i,
-          ls_header_up  TYPE bapi_alm_order_headers_up,
-          ls_status     TYPE bapi_alm_order_usrstat,
-          ls_method     TYPE bapi_alm_order_method,
-          lt_return     TYPE TABLE OF bapiret2,
-          ls_return     TYPE bapiret2.
-
-    CLEAR: lt_header, lt_header_up, lt_status, lt_methods, lt_return.
-
-    "---------------------------------------------------
-    " Header
-    "---------------------------------------------------
-    ls_header-orderid = <ls_output_row>-aufnr.
-    APPEND ls_header TO lt_header.
-
-    CLEAR ls_header_up.
-    ls_header_up-orderid    = <ls_output_row>-aufnr.
-    ls_header_up-updateflag = 'U'.       " Tell BAPI to update header
-    APPEND ls_header_up TO lt_header_up.
-
-    "---------------------------------------------------
-    " User status
-    "---------------------------------------------------
-    CLEAR ls_status.
-    ls_status-user_st_text = '0014'.     " internal user status (not CMXS text!)
-    ls_status-inactive     = ''.
-    ls_status-change_event = '01'.
-    ls_status-langu_iso    = 'EN'.
-    APPEND ls_status TO lt_status.
-
-    "---------------------------------------------------
-    " Methods
-    "---------------------------------------------------
-    CLEAR ls_method.
-    ls_method-refnumber  = '000001'.
-    ls_method-objecttype = 'HEADER'.
-    ls_method-method     = 'CHANGE'.
-    ls_method-objectkey  = <ls_output_row>-aufnr.
-    APPEND ls_method TO lt_methods.
-
-    CLEAR ls_method.
-    ls_method-refnumber  = '000002'.
-    ls_method-objecttype = 'USERSTATUS'.
-    ls_method-method     = 'CHANGE'.
-    ls_method-objectkey  = <ls_output_row>-aufnr.
-    APPEND ls_method TO lt_methods.
-
-    CLEAR ls_method.
-    ls_method-refnumber  = '000003'.
-    ls_method-objecttype = 'ORDER'.
-    ls_method-method     = 'SAVE'.
-    ls_method-objectkey  = <ls_output_row>-aufnr.
-    APPEND ls_method TO lt_methods.
-
-    "---------------------------------------------------
-    " Call BAPI
-    "---------------------------------------------------
-    CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
-      TABLES
-        it_header     = lt_header
-        it_header_up  = lt_header_up
-        it_methods    = lt_methods
-        it_userstatus = lt_status
-        return        = lt_return
-      EXCEPTIONS
-        OTHERS        = 1.
-
-    IF sy-subrc <> 0.
-      <ls_output_row>-msg = |BAPI call failed (SY-SUBRC={ sy-subrc })|.
-    ELSE.
-      READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
-      IF sy-subrc = 0.
-        <ls_output_row>-msg = ls_return-message.
-        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-      ELSE.
-        <ls_output_row>-msg = 'CMXS status updated successfully'.
-        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
-          EXPORTING wait = 'X'.
-      ENDIF.
-    ENDIF.
-
-    " Always log
-    PERFORM f_write_log USING <ls_output_row>-aufnr
-                               <ls_output_row>-vornr
-                               <ls_output_row>-werks
-                               'CMXS'
-                               <ls_output_row>-msg.
-
-  ENDLOOP.
-
-  COMMIT WORK.
-ENDFORM.
+ORDERID
+BUS_AREA
+MN_WK_CTR
+PLANT
+PMACTTYPE
+PLANGROUP
+SYSTCOND
+FUNCT_LOC
+EQUIPMENT
+SERIALNO
+MATERIAL
+ASSEMBLY
+DEVICEDATA
+MAINTPLANT
+PLSECTN
+LOC_WK_CTR
+ABCINDIC
+SORTFIELD
+PROFIT_CTR
+RESPCCTR
+FUNC_AREA
+SUPERIOR_NETWORK
+SUPERIOR_ACTIVITY
+WBS_ELEM
+PROCESSING_GROUP
+TAXJURCODE
+LOC_COMP_CODE
+ASSET_NO
+SUB_NUMBER
+LOC_BUS_AREA
+COSTCENTER
+LOC_WBS_ELEM
+STANDORDER
+SETTLORDER
+SALESORG
+DISTR_CHAN
+DIVISION
+ORDPLANID
+START_DATE
+FINISH_DATE
+BASICSTART
+BASIC_FIN
+PRIORITY
+REVISION
+VERSION
+SCHED_TYPE
+AUTOSCHED
+CAP_REQMTS
+SCHEDULING_EXACT_BREAK_TIMES
+MRP_RELEVANT
+SALES_ORD
+S_ORD_ITEM
+CALC_MOTIVE
+INVEST_PROFILE
+SCALE
+INV_REASON
+ENVIR_INVEST
+ESTIMATED_COSTS
+CURRENCY
+CSTG_SHEET
+OVERHEAD_KEY
+RES_ANAL_KEY
+SHORT_TEXT
+NOTIF_NO
+CALID
+KALSN
+SUPERIOR_ORDERID
+NOTIF_TYPE
+START_POINT
+END_POINT
+LINEAR_LENGTH
+LINEAR_UNIT
+LINEAR_UNIT_ISO
+FIRST_OFFSET_TYPE_CODE
+FIRST_OFFSET_VALUE
+FIRST_OFFSET_UNIT
+FIRST_OFFSET_UNIT_ISO
+SECOND_OFFSET_TYPE_CODE
+SECOND_OFFSET_VALUE
+SECOND_OFFSET_UNIT
+SECOND_OFFSET_UNIT_ISO
+MARKER_START_POINT
+MARKER_DISTANCE_START_POINT
+MARKER_END_POINT
+MARKER_DISTANCE_END_POINT
+MARKER_DISTANCE_UNIT
+MARKER_DISTANCE_UNIT_ISO
+MATERIAL_LONG
+ASSEMBLY_LONG
+FLDLOGSDELIVISHELDONSHORE
+LACD_DATE
+OLD_LACD_DATE
+OBJECTCLASS
+SETTLEMENT_PROFILE
+SERVICE_DOC_TYPE
+SERVICE_DOC_ID
+SERVICE_DOC_ITEM_ID
+IS_BILLABLE
