@@ -3,37 +3,23 @@ FORM f_send_cmx.
 
   LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_output_row>).
 
-    " Local tables / work areas
     DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
           lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
           lt_methods TYPE TABLE OF bapi_alm_order_method,
-          lt_return  TYPE TABLE OF bapiret2.
-
-    DATA: ls_header  TYPE bapi_alm_order_headers_i,
+          ls_header  TYPE bapi_alm_order_headers_i,
+          ls_status  TYPE bapi_alm_order_usrstat,
           ls_method  TYPE bapi_alm_order_method,
-          ls_return  TYPE bapiret2,
-          ls_usrstat TYPE bapi_alm_order_usrstat.
+          lt_return  TYPE TABLE OF bapiret2,
+          ls_return  TYPE bapiret2.
 
     CLEAR: lt_header, lt_status, lt_methods, lt_return.
 
-    " ---------------------------------------------------------
-    " Header: tell BAPI which order to update
-    " ---------------------------------------------------------
+    " Header
     CLEAR ls_header.
     ls_header-orderid = <ls_output_row>-aufnr.
     APPEND ls_header TO lt_header.
 
-    " ---------------------------------------------------------
-    " User status row
-    " ---------------------------------------------------------
-    CLEAR ls_usrstat.
-    ls_usrstat-orderid = <ls_output_row>-aufnr.
-    ls_usrstat-user_st = 'E0014'.   " <-- set CMXS / CPI status here
-    APPEND ls_usrstat TO lt_status.
-
-    " ---------------------------------------------------------
-    " Methods: CHANGE + SAVE
-    " ---------------------------------------------------------
+    " Method: prepare header change
     CLEAR ls_method.
     ls_method-refnumber  = '000001'.
     ls_method-objecttype = 'HEADER'.
@@ -41,16 +27,29 @@ FORM f_send_cmx.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
+    " User status (E0014 = CMXS)
+    CLEAR ls_status.
+    ls_status-orderid = <ls_output_row>-aufnr.
+    ls_status-user_st = 'E0014'.      " internal status code
+    APPEND ls_status TO lt_status.
+
+    " Method: set user status
     CLEAR ls_method.
     ls_method-refnumber  = '000002'.
+    ls_method-objecttype = 'HEADER'.
+    ls_method-method     = 'USERSTATUS'.
+    ls_method-objectkey  = <ls_output_row>-aufnr.
+    APPEND ls_method TO lt_methods.
+
+    " Method: save order
+    CLEAR ls_method.
+    ls_method-refnumber  = '000003'.
     ls_method-objecttype = 'HEADER'.
     ls_method-method     = 'SAVE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
-    " ---------------------------------------------------------
     " Call BAPI
-    " ---------------------------------------------------------
     CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
       TABLES
         it_header     = lt_header
@@ -60,9 +59,6 @@ FORM f_send_cmx.
       EXCEPTIONS
         OTHERS        = 1.
 
-    " ---------------------------------------------------------
-    " Check result
-    " ---------------------------------------------------------
     IF sy-subrc <> 0.
       <ls_output_row>-msg = |BAPI call failed (SY-SUBRC={ sy-subrc })|.
     ELSE.
@@ -71,30 +67,18 @@ FORM f_send_cmx.
         <ls_output_row>-msg = ls_return-message.
         CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
       ELSE.
-        <ls_output_row>-msg = |Order { <ls_output_row>-aufnr } status set to E0014 successfully|.
+        <ls_output_row>-msg = 'CMXS status updated successfully'.
         CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
-          EXPORTING
-            wait = 'X'.
+          EXPORTING wait = 'X'.
       ENDIF.
     ENDIF.
 
-    " ---------------------------------------------------------
-    " Log result (always)
-    " ---------------------------------------------------------
+    " Log outcome
     PERFORM f_write_log USING <ls_output_row>-aufnr
                                <ls_output_row>-vornr
                                <ls_output_row>-werks
                                'CMXS'
                                <ls_output_row>-msg.
-
-    " Optional: also log BAPI return messages for debugging
-    LOOP AT lt_return INTO ls_return.
-      PERFORM f_write_log USING <ls_output_row>-aufnr
-                                 <ls_output_row>-vornr
-                                 <ls_output_row>-werks
-                                 'RETURN'
-                                 ls_return-message.
-    ENDLOOP.
 
   ENDLOOP.
 
