@@ -1,30 +1,31 @@
 *&---------------------------------------------------------------------*
-*& Include          ZIN_CMX_MAINTENANCE_PLAN_TOP
+*& Include          ZIN_CMX_WORKORDER_TOP
 *&---------------------------------------------------------------------*
 
+CONSTANTS: c_stat_rel  TYPE jest-stat VALUE 'I0002',   "Released
+           c_stat_teco TYPE jest-stat VALUE 'I0045',   "Technically Completed
+           c_stat_lkd  TYPE jest-stat VALUE 'I0043',   "Locked
+           c_stat_cmxc TYPE jest-stat VALUE 'E0010',   "CMX Confirmed
+           c_stat_cmxs TYPE jest-stat VALUE 'E0014'.   "Sent to CMX
 
-TYPES: BEGIN OF ty_result,
-         maintenanceplan_order_status TYPE char10,    "Order_Status
-         maintenanceplan_floc_number  TYPE string,    "FLoc_Number
-         equipment                    TYPE string,    "FLoc_Number
-         maintenanceplan_cycle        TYPE i,         "Cycle
-         maintenanceplan_unit         TYPE dzeieh,    "Unit
-         maintenanceplan_item_des     TYPE string,    "Description
-         maintenanceplan              TYPE string,    "Item
-         maintenanceitem              TYPE string,    "Item
-         system_id                    TYPE char10,    "System ID
-       END OF ty_result.
+TYPES: BEGIN OF ty_output,
+         order_msg_status TYPE char10,              "OrderMessageStatus
+         werks            TYPE werks_d,             "Plant
+         aufnr            TYPE aufnr,               "MaintenanceOrder
+         vornr            TYPE vornr,               "MaintenanceOrderOperation
+         stat_txt         TYPE char40,              "SystemStatusText
+         obj_txt          TYPE char30,              "TechnicalObject
+         gstrp            TYPE viaufkst-gstrp,      "Basic Start Date
+         gltrp            TYPE viaufkst-gltrp,      "Basic End Date
+         lacdate          TYPE viaufkst-lacd_date,  "Latest Acceptable Date
+         system_id        TYPE sy-sysid,            "SystemId (for CPI)
+         msg              TYPE char72,              "Error Message
+       END OF ty_output.
 
-TYPES: BEGIN OF ty_payload,
-         maintenanceplan_order_status TYPE char10,    "Order_Status
-         maintenanceplan_floc_number  TYPE string,    "FLoc_Number
-         maintenanceplan_cycle        TYPE i,         "Cycle
-         maintenanceplan_unit         TYPE dzeieh,    "Unit
-         maintenanceplan_item_des     TYPE string,    "Description
-         system_id                    TYPE char10,    "System ID
-       END OF ty_payload.
+DATA: gt_output TYPE TABLE OF ty_output,
+      gs_output TYPE ty_output.
 
+DATA: gt_orders TYPE TABLE OF viaufkst,
+      gs_order  TYPE viaufkst.
 
-DATA: gt_result  TYPE STANDARD TABLE OF ty_result WITH EMPTY KEY,
-      gt_payload TYPE STANDARD TABLE OF ty_payload WITH EMPTY KEY,
-      gs_result TYPE ty_result.
+DATA: gv_atinn TYPE atinn.   "INTERFACE characteristic ID
