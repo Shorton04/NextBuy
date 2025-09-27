@@ -1,103 +1,39 @@
 FORM f_send_cmx.
-  " match the type of your internal table gt_output
-  FIELD-SYMBOLS: <ls_output_row> TYPE ty_output, "
-                 <fs_comp>      TYPE any.
+  DATA ls_output LIKE LINE OF gt_output.
 
-  DATA: ls_output LIKE LINE OF gt_output.
+  LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_output_row>).
 
-  LOOP AT gt_output ASSIGNING <ls_output_row>.
-
-    " Local BAPI tables
+    " Local tables / work areas
     DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
           lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
           lt_methods TYPE TABLE OF bapi_alm_order_method,
           lt_return  TYPE TABLE OF bapiret2.
 
-    " Work areas
     DATA: ls_header  TYPE bapi_alm_order_headers_i,
           ls_method  TYPE bapi_alm_order_method,
           ls_return  TYPE bapiret2,
           ls_usrstat TYPE bapi_alm_order_usrstat.
 
-    " RTTS
-    DATA: lo_struct TYPE REF TO cl_abap_structdescr,
-          lt_comp   TYPE abap_compdescr_tab,
-          ls_comp   TYPE abap_compdescr.
+    CLEAR: lt_header, lt_status, lt_methods, lt_return.
 
-    " helper variables
-    DATA: lv_refno  TYPE string,
-          lt_fields TYPE TABLE OF string,
-          lv_field  TYPE string.
-
-    CLEAR: lt_header, lt_status, lt_methods, lt_return, ls_usrstat.
-
-    " ------------------------------
-    " Header
-    " ------------------------------
+    " ---------------------------------------------------------
+    " Header: tell BAPI which order to update
+    " ---------------------------------------------------------
+    CLEAR ls_header.
     ls_header-orderid = <ls_output_row>-aufnr.
     APPEND ls_header TO lt_header.
 
-    lv_refno = '000002'.
-
-    " ------------------------------
-    " Dynamic component handling
-    " ------------------------------
-    lo_struct ?= cl_abap_structdescr=>describe_by_data( ls_usrstat ).
-    lt_comp   = lo_struct->components.
-
-    " 1) order identifier
-    READ TABLE lt_comp INTO ls_comp WITH KEY name = 'ORDERID'.
-    IF sy-subrc = 0.
-      ASSIGN COMPONENT 'ORDERID' OF STRUCTURE ls_usrstat TO <fs_comp>.
-      <fs_comp> = <ls_output_row>-aufnr.
-    ELSE.
-      READ TABLE lt_comp INTO ls_comp WITH KEY name = 'OBJNR'.
-      IF sy-subrc = 0.
-        ASSIGN COMPONENT 'OBJNR' OF STRUCTURE ls_usrstat TO <fs_comp>.
-        <fs_comp> = <ls_output_row>-aufnr.
-      ENDIF.
-    ENDIF.
-
-    " 2) user status code
-    READ TABLE lt_comp INTO ls_comp WITH KEY name = 'USER_ST'.
-    IF sy-subrc = 0.
-      ASSIGN COMPONENT 'USER_ST' OF STRUCTURE ls_usrstat TO <fs_comp>.
-      <fs_comp> = 'E0014'.
-    ELSE.
-      READ TABLE lt_comp INTO ls_comp WITH KEY name = 'USERSTATUS'.
-      IF sy-subrc = 0.
-        ASSIGN COMPONENT 'USERSTATUS' OF STRUCTURE ls_usrstat TO <fs_comp>.
-        <fs_comp> = 'E0014'.
-      ELSE.
-        READ TABLE lt_comp INTO ls_comp WITH KEY name = 'USER_ST_TEXT'.
-        IF sy-subrc = 0.
-          ASSIGN COMPONENT 'USER_ST_TEXT' OF STRUCTURE ls_usrstat TO <fs_comp>.
-          <fs_comp> = 'CMXS'.
-        ENDIF.
-      ENDIF.
-    ENDIF.
-
-    " 3) reference number
-    CLEAR lt_fields.
-    APPEND 'REFNUMBER' TO lt_fields.
-    APPEND 'REFNO'     TO lt_fields.
-    APPEND 'REFNR'     TO lt_fields.
-    APPEND 'REF'       TO lt_fields.
-
-    LOOP AT lt_fields INTO lv_field.
-      READ TABLE lt_comp INTO ls_comp WITH KEY name = lv_field.
-      IF sy-subrc = 0.
-        ASSIGN COMPONENT lv_field OF STRUCTURE ls_usrstat TO <fs_comp>.
-        <fs_comp> = lv_refno.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-
+    " ---------------------------------------------------------
+    " User status row
+    " ---------------------------------------------------------
+    CLEAR ls_usrstat.
+    ls_usrstat-orderid = <ls_output_row>-aufnr.
+    ls_usrstat-user_st = 'E0014'.   " <-- set CMXS / CPI status here
     APPEND ls_usrstat TO lt_status.
 
-    " ------------------------------
-    " Methods table
-    " ------------------------------
+    " ---------------------------------------------------------
+    " Methods: CHANGE + SAVE
+    " ---------------------------------------------------------
     CLEAR ls_method.
     ls_method-refnumber  = '000001'.
     ls_method-objecttype = 'HEADER'.
@@ -106,29 +42,27 @@ FORM f_send_cmx.
     APPEND ls_method TO lt_methods.
 
     CLEAR ls_method.
-    ls_method-refnumber  = lv_refno.
-    ls_method-objecttype = 'HEADER'.
-    ls_method-method     = 'USERSTATUS'.
-    ls_method-objectkey  = <ls_output_row>-aufnr.
-    APPEND ls_method TO lt_methods.
-
-    CLEAR ls_method.
-    ls_method-refnumber  = '000003'.
+    ls_method-refnumber  = '000002'.
     ls_method-objecttype = 'HEADER'.
     ls_method-method     = 'SAVE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
-    " ------------------------------
+    " ---------------------------------------------------------
     " Call BAPI
-    " ------------------------------
+    " ---------------------------------------------------------
     CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
       TABLES
         it_header     = lt_header
         it_methods    = lt_methods
         it_userstatus = lt_status
-        return        = lt_return.
+        return        = lt_return
+      EXCEPTIONS
+        OTHERS        = 1.
 
+    " ---------------------------------------------------------
+    " Check result
+    " ---------------------------------------------------------
     IF sy-subrc <> 0.
       <ls_output_row>-msg = |BAPI call failed (SY-SUBRC={ sy-subrc })|.
     ELSE.
@@ -137,17 +71,31 @@ FORM f_send_cmx.
         <ls_output_row>-msg = ls_return-message.
         CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
       ELSE.
-        <ls_output_row>-msg = 'CMXS status updated successfully'.
-        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+        <ls_output_row>-msg = |Order { <ls_output_row>-aufnr } status set to E0014 successfully|.
+        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+          EXPORTING
+            wait = 'X'.
       ENDIF.
     ENDIF.
 
-    " log result
+    " ---------------------------------------------------------
+    " Log result (always)
+    " ---------------------------------------------------------
     PERFORM f_write_log USING <ls_output_row>-aufnr
                                <ls_output_row>-vornr
                                <ls_output_row>-werks
                                'CMXS'
                                <ls_output_row>-msg.
+
+    " Optional: also log BAPI return messages for debugging
+    LOOP AT lt_return INTO ls_return.
+      PERFORM f_write_log USING <ls_output_row>-aufnr
+                                 <ls_output_row>-vornr
+                                 <ls_output_row>-werks
+                                 'RETURN'
+                                 ls_return-message.
+    ENDLOOP.
+
   ENDLOOP.
 
   COMMIT WORK.
