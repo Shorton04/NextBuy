@@ -1,10 +1,37 @@
-EXCEPTIONS
-    OTHERS        = 1.
 
 IF sy-subrc <> 0.
-  <ls_output_row>-msg = |BAPI failed with sy-subrc { sy-subrc }|.
-ELSE.
-  LOOP AT lt_return INTO ls_return WHERE type = 'E' OR type = 'A'.
-    <ls_output_row>-msg = ls_return-message.
-  ENDLOOP.
-ENDIF.
+ " Call STATUS_CHANGE_EXTERN to set CMXS status
+    CALL FUNCTION 'STATUS_CHANGE_EXTERN'
+      EXPORTING
+        objnr               = lv_objnr
+        user_status         = 'CMXS'   " Or E0014 if that's the active key
+        set_inactive        = ' '
+      EXCEPTIONS
+        object_not_found    = 1
+        status_inconsistent = 2
+        status_not_allowed  = 3
+        OTHERS              = 4.
+
+    IF sy-subrc = 0.
+      COMMIT WORK.
+      <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: CMXS set successfully|.
+    ELSE.
+      CASE sy-subrc.
+        WHEN 1.
+          <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: Object not found|.
+        WHEN 2.
+          <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: Status inconsistent|.
+        WHEN 3.
+          <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: Status not allowed|.
+        WHEN OTHERS.
+          <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: Unknown error|.
+      ENDCASE.
+      ROLLBACK WORK.
+    ENDIF.
+
+    " Always log the result
+    PERFORM f_write_log USING <ls_output_row>-aufnr
+                               <ls_output_row>-vornr
+                               <ls_output_row>-werks
+                               'CMXS'
+                               <ls_output_row>-msg.
