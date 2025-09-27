@@ -1,3 +1,5 @@
+I resolved the save with this
+
 FORM f_send_cmx.
   DATA ls_output LIKE LINE OF gt_output.
 
@@ -14,37 +16,38 @@ FORM f_send_cmx.
 
     CLEAR: lt_header, lt_status, lt_methods, lt_return.
 
-    " Header
-    CLEAR ls_header.
+    " Header - must include method entry
     ls_header-orderid = <ls_output_row>-aufnr.
     APPEND ls_header TO lt_header.
 
-    " Method: prepare header change
+    " Method for header (required)
     CLEAR ls_method.
-    ls_method-refnumber  = '000001'.
+    ls_method-refnumber = '000001'.
     ls_method-objecttype = 'HEADER'.
     ls_method-method     = 'CHANGE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
-    " User status (E0014 = CMXS)
+    " User status
     CLEAR ls_status.
-    ls_status-orderid = <ls_output_row>-aufnr.
-    ls_status-user_st = 'E0014'.      " internal status code
+    ls_status-user_st_text = 'E0014'.
+    ls_status-inactive     = ''.
+    ls_status-change_event = '01'.
+    ls_status-langu_iso    = 'EN'.
     APPEND ls_status TO lt_status.
 
-    " Method: set user status
+    " Method for user status
     CLEAR ls_method.
-    ls_method-refnumber  = '000002'.
-    ls_method-objecttype = 'HEADER'.
-    ls_method-method     = 'USERSTATUS'.
+    ls_method-refnumber = '000002'.
+    ls_method-objecttype = 'USERSTATUS'.
+    ls_method-method     = 'CHANGE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
-    " Method: save order
+    " Method for SAVE (required by BAPI)
     CLEAR ls_method.
-    ls_method-refnumber  = '000003'.
-    ls_method-objecttype = 'HEADER'.
+    ls_method-refnumber = '000003'.
+    ls_method-objecttype = 'ORDER'.     " Changed from HEADER to ORDER
     ls_method-method     = 'SAVE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
@@ -62,6 +65,7 @@ FORM f_send_cmx.
     IF sy-subrc <> 0.
       <ls_output_row>-msg = |BAPI call failed (SY-SUBRC={ sy-subrc })|.
     ELSE.
+      " Check messages
       READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
       IF sy-subrc = 0.
         <ls_output_row>-msg = ls_return-message.
@@ -69,11 +73,12 @@ FORM f_send_cmx.
       ELSE.
         <ls_output_row>-msg = 'CMXS status updated successfully'.
         CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
-          EXPORTING wait = 'X'.
+          EXPORTING
+            wait = 'X'.
       ENDIF.
     ENDIF.
 
-    " Log outcome
+    " Always log
     PERFORM f_write_log USING <ls_output_row>-aufnr
                                <ls_output_row>-vornr
                                <ls_output_row>-werks
