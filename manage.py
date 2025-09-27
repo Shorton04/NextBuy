@@ -1,68 +1,90 @@
-FORM f_send_to_cpi .
-  DATA: lv_payload TYPE string.
-  DATA: lv_rfc TYPE rfcdest VALUE 'CMX_MaintenancePlan'.
-  DATA: lv_content_value TYPE string VALUE 'application/json'.
+FORM f_send_to_cpi.
+  IF p_test = abap_true.
+    RETURN. " Skip CPI call in test mode
+  ENDIF.
 
+  DATA: lv_payload   TYPE string,
+        lv_content   TYPE string VALUE 'application/json',
+        lv_rfc       TYPE rfcdest VALUE 'CMX_WorkOrder',
+        lv_status    TYPE i,
+        lv_status_c  TYPE char10,
+        lv_response  TYPE string.
+
+  " Build JSON payload (PascalCase)
   TRY.
-      lv_payload = xco_ku_json=>data->from_abap( gt_payload )->apply( VALUE #(
-                                ( xco_ku_json=>transformation->underscore_to_pascal_case )
+      lv_payload = xco_ku_json=>data->from_abap( gt_output )->apply( VALUE #(
+                        ( xco_ku_json=>transformation->underscore_to_pascal_case )
       ) )->to_string( ).
-    CATCH cx_sxml_error INTO DATA(lx_sxml_error).
+    CATCH cx_sxml_error INTO DATA(lx_error).
+      LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_output_row>).
+        <ls_output_row>-msg = |JSON build failed: { lx_error->get_text( ) }|.
+        PERFORM f_write_log USING <ls_output_row>-aufnr
+                                   <ls_output_row>-vornr
+                                   <ls_output_row>-werks
+                                   'CMXS'
+                                   <ls_output_row>-msg.
+      ENDLOOP.
+      RETURN.
   ENDTRY.
 
-  CALL METHOD cl_http_client=>create_by_destination
-    EXPORTING
-      destination              = lv_rfc
-    IMPORTING
-      client                   = DATA(lo_http_client)
-    EXCEPTIONS
-      argument_not_found       = 1
-      destination_not_found    = 2
-      destination_no_authority = 3
-      plugin_not_active        = 4
-      internal_error           = 5
-      OTHERS                   = 6.
-
-  IF sy-subrc <> 0.
-
+  " HTTP client from destination
+  cl_http_client=>create_by_destination(
+    EXPORTING destination = lv_rfc
+    IMPORTING client      = DATA(lo_http_client)
+    EXCEPTIONS OTHERS     = 1 ).
+  IF sy-subrc <> 0 OR lo_http_client IS INITIAL.
+    LOOP AT gt_output ASSIGNING <ls_output_row>.
+      <ls_output_row>-msg = 'HTTP client creation failed'.
+      PERFORM f_write_log USING <ls_output_row>-aufnr
+                                 <ls_output_row>-vornr
+                                 <ls_output_row>-werks
+                                 'CMXS'
+                                 <ls_output_row>-msg.
+    ENDLOOP.
+    RETURN.
   ENDIF.
 
-  CALL METHOD lo_http_client->request->set_header_field
-    EXPORTING
-      name  = '~request_method'
-      value = 'POST'.
+  " HTTP headers
+  lo_http_client->request->set_header_field( name = '~request_method' value = 'POST' ).
+  lo_http_client->request->set_header_field( name = 'Content-Type'    value = lv_content ).
 
-  CALL METHOD lo_http_client->request->set_header_field
-    EXPORTING
-      name  = 'Content-Type'
-      value = lv_content_value.
+  " Payload
+  lo_http_client->request->set_cdata( lv_payload ).
 
-  CALL METHOD lo_http_client->request->set_cdata
-    EXPORTING
-      data = lv_payload.
+  " Send + receive
+  TRY.
+      lo_http_client->send( ).
+      lo_http_client->receive( ).
+    CATCH cx_root INTO DATA(lx_comm_error).
+      LOOP AT gt_output ASSIGNING <ls_output_row>.
+        <ls_output_row>-msg = |HTTP error: { lx_comm_error->get_text( ) }|.
+        PERFORM f_write_log USING <ls_output_row>-aufnr
+                                   <ls_output_row>-vornr
+                                   <ls_output_row>-werks
+                                   'CMXS'
+                                   <ls_output_row>-msg.
+      ENDLOOP.
+      RETURN.
+  ENDTRY.
 
-  CALL METHOD lo_http_client->send
-    EXCEPTIONS
-      http_communication_failure = 1
-      http_invalid_state         = 2
-      http_processing_failed     = 3
-      http_invalid_timeout       = 4
-      OTHERS                     = 5.
-  IF sy-subrc <> 0.
+  " Status + response
+  lo_http_client->response->get_status( IMPORTING code = lv_status ).
+  WRITE lv_status TO lv_status_c.
+  lv_response = lo_http_client->response->get_cdata( ).
 
-  ENDIF.
+  " Log
+  LOOP AT gt_output ASSIGNING <ls_output_row>.
+    IF lv_status = 200.
+      <ls_output_row>-msg = 'CPI success'.
+    ELSE.
+      <ls_output_row>-msg = |CPI error { lv_status_c }: { lv_response }|.
+    ENDIF.
+    PERFORM f_write_log USING <ls_output_row>-aufnr
+                               <ls_output_row>-vornr
+                               <ls_output_row>-werks
+                               'CMXS'
+                               <ls_output_row>-msg.
+  ENDLOOP.
 
-  CALL METHOD lo_http_client->receive
-    EXCEPTIONS
-      http_communication_failure = 1
-      http_invalid_state         = 2
-      http_processing_failed     = 3
-      OTHERS                     = 4.
-
-  lo_http_client->response->get_status( IMPORTING code = DATA(lv_status) ).
-
-  IF lv_status = '200'.
-
-  ENDIF.
-
+  COMMIT WORK.
 ENDFORM.
