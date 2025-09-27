@@ -1,13 +1,28 @@
-[
-  {
-    "OrderMessageStatus": "CREATE",
-    "MaintenaceOrder": 000060000113,
-    "MaintenanceOrderOperation": 0010,
-    "SystemStatusText": "REL",
-    "TechnicalObjective": "Y11-F6-SC21111",
-    "MaintOrdBasicStartDate": 20250910,
-    "MaintOrdBasicEndDate": 20250910,
-    "LatestAcceptableComplDate": 20251211,
-    "SystemId": "T30"
-  },
- ]
+*&---------------------------------------------------------------------*
+*& Include          ZIN_CMX_WORKORDER_SEL
+*&---------------------------------------------------------------------*
+TABLES: viaufkst, afvc, jest, cabn, ausp, inob, cdhdr, tj02t.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+
+  SELECT-OPTIONS: so_werks FOR viaufkst-iwerk OBLIGATORY,   "Plant
+                  so_auart FOR viaufkst-auart OBLIGATORY,   "Order Type
+                  so_aufnr FOR viaufkst-aufnr,              "Order Number
+                  so_equnr FOR viaufkst-equnr,              "Equipment
+                  so_floc  FOR viaufkst-tplnr,              "Functional Location
+                  so_date  FOR sy-datum NO-EXTENSION,       "Check from Date
+                  so_time  FOR sy-uzeit NO-EXTENSION.       "Check from Time
+
+  PARAMETERS: p_test AS CHECKBOX DEFAULT ''.               "Test Run Flag
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+INITIALIZATION.
+  " Default to current date/time
+  so_date-low = sy-datum.
+  so_date-high = sy-datum.
+  so_time-low = sy-uzeit.
+  so_time-high = sy-uzeit.
+  so_date-sign = 'I'.
+  so_date-option = 'EQ'.
+  APPEND so_date.
