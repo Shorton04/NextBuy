@@ -204,21 +204,28 @@ FORM f_send_cmx.
     " Methods
     "---------------------------------------------------
     CLEAR ls_method.
-    ls_method-refnumber  = '0001'.
+    ls_method-refnumber  = '00001'.
     ls_method-objecttype = 'HEADER'.
     ls_method-method     = 'CHANGE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
     CLEAR ls_method.
-    ls_method-refnumber  = '0002'.
+    ls_method-refnumber  = '00001'.
     ls_method-objecttype = 'USERSTATUS'.
     ls_method-method     = 'CHANGE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
+    READ TABLE lt_status INDEX 1 INTO ls_status.
+    IF sy-subrc = 0.
+      ls_status-change_event = '01'.
+      MODIFY lt_status FROM ls_status INDEX 1
+      TRANSPORTING change_event.
+    ENDIF.
+
     CLEAR ls_method.
-    ls_method-refnumber  = '0003'.
+    ls_method-refnumber  = '00003'.
     ls_method-objecttype = 'ORDER'.
     ls_method-method     = 'SAVE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
@@ -250,7 +257,6 @@ FORM f_send_cmx.
           EXPORTING wait = 'X'.
       ENDIF.
     ENDIF.
-
     " Always log
     PERFORM f_write_log USING <ls_output_row>-aufnr
                                <ls_output_row>-vornr
@@ -258,43 +264,6 @@ FORM f_send_cmx.
                                'CMXS'
                                <ls_output_row>-msg.
 
-    IF sy-subrc <> 0.
- " Call STATUS_CHANGE_EXTERN to set CMXS status
-    CALL FUNCTION 'STATUS_CHANGE_EXTERN'
-      EXPORTING
-        objnr               = lv_objnr
-        user_status         = 'CMXS'   " Or E0014 if that's the active key
-        set_inactive        = ' '
-      EXCEPTIONS
-        object_not_found    = 1
-        status_inconsistent = 2
-        status_not_allowed  = 3
-        OTHERS              = 4.
-
-    IF sy-subrc = 0.
-      COMMIT WORK.
-      <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: CMXS set successfully|.
-    ELSE.
-      CASE sy-subrc.
-        WHEN 1.
-          <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: Object not found|.
-        WHEN 2.
-          <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: Status inconsistent|.
-        WHEN 3.
-          <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: Status not allowed|.
-        WHEN OTHERS.
-          <ls_output_row>-msg = |Order { <ls_output_row>-aufnr }: Unknown error|.
-      ENDCASE.
-      ROLLBACK WORK.
-    ENDIF.
-
-    " Always log the result
-    PERFORM f_write_log USING <ls_output_row>-aufnr
-                               <ls_output_row>-vornr
-                               <ls_output_row>-werks
-                               'CMXS'
-                               <ls_output_row>-msg.
-ENDIF.
   ENDLOOP.
 
   COMMIT WORK.
