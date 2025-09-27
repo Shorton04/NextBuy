@@ -1,33 +1,13 @@
-*&---------------------------------------------------------------------*
-*& Include          ZIN_CMX_MAINTENANCE_PLAN_SEL
-*&---------------------------------------------------------------------*
-TABLES: iflot, equi, mpos, plpo, ausp, crhd, aufk, cabn.
-*----------------------------------------------------------------------
-* Selection Screen Definitions
-*----------------------------------------------------------------------
-SELECTION-SCREEN BEGIN OF BLOCK b1.
-  SELECT-OPTIONS:
-    so_werks FOR iflot-iwerk
-             DEFAULT 'ZXZZ'
-             OBLIGATORY,                                       " Plant
-    so_warpl FOR mpos-warpl,                        " Maintenance Plan
-    so_wapos FOR mpos-wapos,                        " Maintenance Item
-    so_auart FOR aufk-auart
-             DEFAULT 'YA07'
-             OBLIGATORY,                                  " Order Type
-    so_arbpl FOR crhd-arbpl,                         " Main Work Center
-    so_floc  FOR iflot-tplnr,                     " Functional Location
-    so_equnr FOR mpos-equnr,                                " Equipment
-    so_atinn FOR cabn-atnam NO INTERVALS
-             DEFAULT 'INTERFACE',                 " Characteristic
-    so_atwrt FOR ausp-atwrt NO INTERVALS
-             DEFAULT 'CMX',                       " Characteristic Value
-    so_date  FOR sy-datum
-             "NO INTERVALS
-             NO-EXTENSION,
-    so_time  FOR sy-uzeit
-             "NO INTERVALS
-             NO-EXTENSION.
-  PARAMETERS:
-    p_test AS CHECKBOX DEFAULT 'X'.       " Test Run Checkbox
-SELECTION-SCREEN END OF BLOCK b1 .
+[
+  {
+    "OrderMessageStatus": "CREATE",
+    "MaintenaceOrder": 000060000113,
+    "MaintenanceOrderOperation": 0010,
+    "SystemStatusText": "REL",
+    "TechnicalObjective": "Y11-F6-SC21111",
+    "MaintOrdBasicStartDate": 20250910,
+    "MaintOrdBasicEndDate": 20250910,
+    "LatestAcceptableComplDate": 20251211,
+    "SystemId": "T30"
+  },
+ ]
