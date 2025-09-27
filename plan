@@ -1,8 +1,7 @@
-Here’s my activated code
-
 FORM f_send_cmx.
   DATA ls_output LIKE LINE OF gt_output.
-    LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_output_row>).
+
+  LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_output_row>).
 
     DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
           lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
@@ -15,36 +14,49 @@ FORM f_send_cmx.
 
     CLEAR: lt_header, lt_status, lt_methods, lt_return.
 
-    " Header
+    "---------------------------------------------------
+    " Header (mandatory)
+    "---------------------------------------------------
     ls_header-orderid = <ls_output_row>-aufnr.
     APPEND ls_header TO lt_header.
 
-
-    " User status
-    CLEAR ls_status.
-    ls_status-user_st_text = 'E0014'.
-    ls_status-inactive     = ''.
-    ls_status-change_event = '01'.
-    ls_status-langu_iso    = 'EN'.
-    APPEND ls_status TO lt_status.
-
-    " Method for user status
+    " Method for header CHANGE (required)
     CLEAR ls_method.
-    ls_method-refnumber = '000001'.
-    ls_method-objecttype = 'USERSTATUS'.
+    ls_method-refnumber  = '000001'.
+    ls_method-objecttype = 'HEADER'.
     ls_method-method     = 'CHANGE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
-    " Method for user status
+    "---------------------------------------------------
+    " User Status update
+    "---------------------------------------------------
+    CLEAR ls_status.
+    ls_status-orderid = <ls_output_row>-aufnr.
+    ls_status-user_st = 'E0014'.   " CMXS internal code
+    APPEND ls_status TO lt_status.
+
+    " Method for STATUS
     CLEAR ls_method.
-    ls_method-refnumber = '000002'.
+    ls_method-refnumber  = '000002'.
+    ls_method-objecttype = 'HEADER'.
+    ls_method-method     = 'STATUS'.
+    ls_method-objectkey  = <ls_output_row>-aufnr.
+    APPEND ls_method TO lt_methods.
+
+    "---------------------------------------------------
+    " SAVE (required for commit)
+    "---------------------------------------------------
+    CLEAR ls_method.
+    ls_method-refnumber  = '000003'.
     ls_method-objecttype = 'HEADER'.
     ls_method-method     = 'SAVE'.
     ls_method-objectkey  = <ls_output_row>-aufnr.
     APPEND ls_method TO lt_methods.
 
+    "---------------------------------------------------
     " Call BAPI
+    "---------------------------------------------------
     CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
       TABLES
         it_header     = lt_header
@@ -65,11 +77,14 @@ FORM f_send_cmx.
       ELSE.
         <ls_output_row>-msg = 'CMXS status updated successfully'.
         CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
-          EXPORTING wait = 'X'.
+          EXPORTING
+            wait = 'X'.
       ENDIF.
     ENDIF.
 
-    " Always log
+    "---------------------------------------------------
+    " Always log result
+    "---------------------------------------------------
     PERFORM f_write_log USING <ls_output_row>-aufnr
                                <ls_output_row>-vornr
                                <ls_output_row>-werks
