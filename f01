@@ -1,87 +1,80 @@
+*&---------------------------------------------------------------------*
+*& Include          ZIN_A2R_CMX_WORKORDER_TOP
+*&---------------------------------------------------------------------*
+
+CONSTANTS:
+  c_stat_rel  TYPE jest-stat VALUE 'I0002',   "Released
+  c_stat_teco TYPE jest-stat VALUE 'I0045',   "Technically Completed
+  c_stat_lkd  TYPE jest-stat VALUE 'I0043',   "Locked
+  c_stat_cmxc TYPE jest-stat VALUE 'E0010',   "CMX Confirmed
+  c_stat_cmxs TYPE jest-stat VALUE 'E0014'.   "Sent to CMX
+
+
 *---------------------------------------------------------------------*
-* Prefetch related master data (Optimized for S/4HANA)
+* Type Definitions
 *---------------------------------------------------------------------*
-FORM f_prefetch_data.
 
-  IF gt_orders IS INITIAL.
-    RETURN.
-  ENDIF.
+"--- Output structure for ALV display
+TYPES: BEGIN OF ty_output,
+         OrderMessageStatus        TYPE char10,
+         Plant                     TYPE werks_d,
+         MaintenanceOrder          TYPE aufnr,
+         MaintenanceOrderOperation TYPE vornr,
+         SystemStatusText          TYPE char40,
+         TechnicalObject           TYPE char30,
+         MaintOrdBasicStartDate    TYPE viaufkst-gstrp,
+         MaintOrdBasicEndDate      TYPE viaufkst-gltrp,
+         LatestAcceptableComplDate TYPE viaufkst-lacd_date,
+         SystemId                  TYPE sy-sysid,
+         Msg                       TYPE char72,
+       END OF ty_output.
 
-  DATA: lt_objek      TYPE TABLE OF inob-objek,
-        lt_objnr      TYPE TABLE OF jest-objnr,
-        lt_objectid   TYPE TABLE OF cdhdr-objectid,
-        lt_cuobj      TYPE TABLE OF inob-cuobj.
+"--- Prefetch helper structures
+TYPES: BEGIN OF ty_jest_data,
+         objnr TYPE jest-objnr,
+         stat  TYPE jest-stat,
+         inact TYPE jest-inact,
+       END OF ty_jest_data.
 
-  LOOP AT gt_orders INTO DATA(ls_order).
-    IF ls_order-equnr IS NOT INITIAL.
-      APPEND ls_order-equnr TO lt_objek.
-    ENDIF.
+TYPES: BEGIN OF ty_inob_data,
+         objek TYPE inob-objek,
+         cuobj TYPE inob-cuobj,
+       END OF ty_inob_data.
 
-    IF ls_order-tplnr IS NOT INITIAL.
-      APPEND ls_order-tplnr TO lt_objek.
-    ENDIF.
+TYPES: BEGIN OF ty_ausp_data,
+         objek TYPE ausp-objek,
+         atinn TYPE ausp-atinn,
+         atwrt TYPE ausp-atwrt,
+       END OF ty_ausp_data.
 
-    APPEND ls_order-objnr TO lt_objnr.
-    CONCATENATE sy-mandt '30' ls_order-aufnr INTO DATA(lv_objid).
-    APPEND lv_objid TO lt_objectid.
-  ENDLOOP.
+TYPES: BEGIN OF ty_cdhdr_data,
+         objectid TYPE cdhdr-objectid,
+         udate    TYPE cdhdr-udate,
+         utime    TYPE cdhdr-utime,
+       END OF ty_cdhdr_data.
 
-  SORT lt_objek     BY table_line. DELETE ADJACENT DUPLICATES FROM lt_objek.
-  SORT lt_objnr     BY table_line. DELETE ADJACENT DUPLICATES FROM lt_objnr.
-  SORT lt_objectid  BY table_line. DELETE ADJACENT DUPLICATES FROM lt_objectid.
 
-  " 1️⃣ INOB (object classification link)
-  SELECT objek, cuobj
-    FROM inob
-    INTO TABLE @gt_inob
-    FOR ALL ENTRIES IN @lt_objek
-    WHERE objek = @lt_objek-table_line.
+*---------------------------------------------------------------------*
+* Data Declarations
+*---------------------------------------------------------------------*
 
-  " 2️⃣ AUSP (characteristics values)
-  IF gt_inob IS NOT INITIAL.
-    SELECT objek, atinn, atwrt
-      FROM ausp
-      FOR ALL ENTRIES IN @gt_inob
-      WHERE objek = @gt_inob-cuobj
-      INTO TABLE @gt_ausp.
-  ENDIF.
+"--- Main output
+DATA: gt_output TYPE TABLE OF ty_output,
+      gs_output TYPE ty_output.
 
-  " 3️⃣ JEST (system statuses)
-  SELECT objnr, stat, inact
-    FROM jest
-    FOR ALL ENTRIES IN @lt_objnr
-    WHERE objnr = @lt_objnr-table_line
-    INTO TABLE @gt_jest.
+"--- Orders
+DATA: gt_orders TYPE TABLE OF viaufkst,
+      gs_order  TYPE viaufkst.
 
-  " 4️⃣ JCDS (status change log)
-  SELECT objnr, stat, udate, utime, inact
-    FROM jcds
-    FOR ALL ENTRIES IN @lt_objnr
-    WHERE objnr = @lt_objnr-table_line
-      AND stat IN ('I0043','I0045','I0002')
-    INTO TABLE @gt_jcds.
+"--- Prefetched master data tables
+DATA: gt_jest  TYPE TABLE OF ty_jest_data,
+      gs_jest  TYPE ty_jest_data,
+      gt_inob  TYPE TABLE OF ty_inob_data,
+      gs_inob  TYPE ty_inob_data,
+      gt_ausp  TYPE TABLE OF ty_ausp_data,
+      gs_ausp  TYPE ty_ausp_data,
+      gt_cdhdr TYPE TABLE OF ty_cdhdr_data,
+      gs_cdhdr TYPE ty_cdhdr_data.
 
-  " 5️⃣ CDHDR (change header for ORDER)
-  SELECT objectid, udate, utime
-    FROM cdhdr
-    FOR ALL ENTRIES IN @lt_objectid
-    WHERE objectclas = 'ORDER'
-      AND objectid   = @lt_objectid-table_line
-    INTO TABLE @gt_cdhdr.
-
-  " 6️⃣ TJ02T (status texts, only once)
-  IF gt_tj02t IS INITIAL.
-    SELECT istat, txt04
-      FROM tj02t
-      WHERE spras = 'E'
-      INTO TABLE @gt_tj02t.
-  ENDIF.
-
-  SORT gt_inob   BY objek.
-  SORT gt_ausp   BY objek atinn.
-  SORT gt_jest   BY objnr stat.
-  SORT gt_jcds   BY objnr stat.
-  SORT gt_cdhdr  BY objectid.
-  SORT gt_tj02t  BY istat.
-
-ENDFORM.
+"--- Misc
+DATA: gv_atinn TYPE atinn.   "INTERFACE characteristic ID
