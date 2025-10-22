@@ -17,6 +17,7 @@ FUNCTION zlonza_alv_popup_table.
         lv_answer    TYPE c,
         lv_caption   TYPE string.
 
+  " Safety check
   IF it_table IS INITIAL.
     MESSAGE 'No data to display in popup table.' TYPE 'I'.
     RETURN.
@@ -71,8 +72,8 @@ FUNCTION zlonza_alv_popup_table.
 
       " --- Close popup cleanly before continuing ---
       IF lo_container IS BOUND.
-        CALL METHOD lo_container->free.
-        lo_container = NOTHING.
+        lo_container->free( ).
+        CLEAR lo_container.
       ENDIF.
 
       IF lv_answer = '1'.
