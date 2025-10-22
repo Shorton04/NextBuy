@@ -2,93 +2,68 @@ FUNCTION zlonza_alv_popup_table.
 *"----------------------------------------------------------------------
 *"*"Local Interface:
 *"  IMPORTING
-*"     REFERENCE(iv_start_col) TYPE i DEFAULT 25
-*"     REFERENCE(iv_start_line) TYPE i DEFAULT 6
-*"     REFERENCE(iv_end_col)   TYPE i DEFAULT 120
-*"     REFERENCE(iv_end_line)  TYPE i DEFAULT 25
-*"     REFERENCE(iv_title)     TYPE c DEFAULT 'ALV Display'
+*"     REFERENCE(IV_TITLE) TYPE STRING DEFAULT 'ALV'
 *"  EXPORTING
-*"     REFERENCE(ev_choice)    TYPE flag
+*"     REFERENCE(EV_CHOICE) TYPE FLAG
 *"  CHANGING
-*"     REFERENCE(it_table)     TYPE STANDARD TABLE OPTIONAL
+*"     REFERENCE(IT_TABLE) TYPE STANDARD TABLE OPTIONAL
 *"----------------------------------------------------------------------
-
-  DATA: lo_container  TYPE REF TO cl_gui_dialogbox_container,
-        lo_salv       TYPE REF TO cl_salv_table,
-        lo_functions  TYPE REF TO cl_salv_functions,
-        lo_display    TYPE REF TO cl_salv_display_settings,
-        lo_selections TYPE REF TO cl_salv_selections,
-        lv_caption    TYPE c LENGTH 80,
-        lv_answer     TYPE c.
+  DATA: lo_container TYPE REF TO cl_gui_dialogbox_container,
+        lo_salv      TYPE REF TO cl_salv_table,
+        lo_functions TYPE REF TO cl_salv_functions,
+        lo_columns   TYPE REF TO cl_salv_columns_table,
+        lo_display   TYPE REF TO cl_salv_display_settings,
+        lv_answer    TYPE c,
+        lv_caption   TYPE string.
 
   FIELD-SYMBOLS: <fs_table> TYPE STANDARD TABLE.
 
   IF it_table IS INITIAL.
+    MESSAGE 'No data to display in popup table.' TYPE 'I'.
     RETURN.
   ENDIF.
 
-  " Title as CHAR type (avoid STRING mismatch)
-  lv_caption = iv_title.
-
-  " Create popup container for ALV
-  CREATE OBJECT lo_container
-    EXPORTING
-      caption = lv_caption
-      top     = iv_start_line
-      left    = iv_start_col
-      width   = iv_end_col
-      height  = iv_end_line.
-
   TRY.
-      " Create SALV table in popup container
-      CALL METHOD cl_salv_table=>factory
+      " Container title
+      lv_caption = iv_title.
+
+      " Create popup container window for ALV
+      CREATE OBJECT lo_container
         EXPORTING
-          r_container = lo_container
+          caption = lv_caption
+          top     = 10
+          left    = 10
+          width   = 150
+          height  = 40.
+
+      " Create SALV Table inside popup
+      cl_salv_table=>factory(
+        EXPORTING
+          r_container  = lo_container
         IMPORTING
           r_salv_table = lo_salv
         CHANGING
-          t_table      = it_table.
+          t_table      = it_table ).
 
-      " Enable all ALV functions
-      CALL METHOD lo_salv->get_functions
-        RECEIVING
-          value = lo_functions.
+      " Display options and enhancements
+      lo_functions = lo_salv->get_functions( ).
+      lo_functions->set_all( abap_true ).
 
-      CALL METHOD lo_functions->set_all
-        EXPORTING
-          value = abap_true.
+      lo_display = lo_salv->get_display_settings( ).
+      lo_display->set_striped_pattern( abap_true ).
+      lo_display->set_list_header( iv_title ).
 
-      " Display settings
-      CALL METHOD lo_salv->get_display_settings
-        RECEIVING
-          value = lo_display.
+      lo_columns = lo_salv->get_columns( ).
+      lo_columns->set_optimize( abap_true ).
 
-      " Use CHAR for caption value to match parameter type
-      CALL METHOD lo_display->set_list_header
-        EXPORTING
-          value = lv_caption.
+      " Display popup table
+      lo_salv->display( ).
 
-      CALL METHOD lo_display->set_striped_pattern
-        EXPORTING
-          value = abap_true.
-
-      " Selection behavior
-      CALL METHOD lo_salv->get_selections
-        RECEIVING
-          value = lo_selections.
-
-      CALL METHOD lo_selections->set_selection_mode
-        EXPORTING
-          value = if_salv_c_selection_mode=>row_column.
-
-      " Display ALV popup
-      CALL METHOD lo_salv->display.
-
-      " Optional confirmation popup
+      " Ask user if want to continue
       CALL FUNCTION 'POPUP_TO_CONFIRM'
         EXPORTING
-          titlebar       = lv_caption
-          text_question  = 'Do you want to continue?'
+          titlebar       = iv_title
+          text_question  = 'Do you want to continue to the next step?'
           text_button_1  = 'Yes'
           text_button_2  = 'No'
           default_button = '1'
@@ -96,18 +71,16 @@ FUNCTION zlonza_alv_popup_table.
           answer         = lv_answer.
 
       IF lv_answer = '1'.
-        ev_choice = abap_true.
+        ev_choice = abap_false. " Continue
       ELSE.
-        ev_choice = abap_false.
+        ev_choice = abap_true.  " Stop
       ENDIF.
 
-    CATCH cx_salv_msg INTO DATA(lx_salv).
-      MESSAGE lx_salv->get_text( ) TYPE 'E'.
-  ENDTRY.
+      " Clean up the container
+      FREE lo_container.
 
-  " Free popup container
-  IF lo_container IS BOUND.
-    CALL METHOD lo_container->free.
-  ENDIF.
+    CATCH cx_salv_msg INTO DATA(lx_msg).
+      MESSAGE lx_msg->get_text( ) TYPE 'E'.
+  ENDTRY.
 
 ENDFUNCTION.
