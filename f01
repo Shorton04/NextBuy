@@ -2,6 +2,9 @@
 *& Include          ZIN_A2R_CMX_WORKORDER_TOP
 *&---------------------------------------------------------------------*
 
+*---------------------------------------------------------------------*
+* Constants
+*---------------------------------------------------------------------*
 CONSTANTS:
   c_stat_rel  TYPE jest-stat VALUE 'I0002',   "Released
   c_stat_teco TYPE jest-stat VALUE 'I0045',   "Technically Completed
@@ -53,6 +56,13 @@ TYPES: BEGIN OF ty_cdhdr_data,
          utime    TYPE cdhdr-utime,
        END OF ty_cdhdr_data.
 
+"--- Added for Operation Prefetch
+TYPES: BEGIN OF ty_op,
+         aufnr TYPE afko-aufnr,
+         vornr TYPE afvc-vornr,
+         objnr TYPE afvc-objnr,
+       END OF ty_op.
+
 
 *---------------------------------------------------------------------*
 * Data Declarations
@@ -75,6 +85,10 @@ DATA: gt_jest  TYPE TABLE OF ty_jest_data,
       gs_ausp  TYPE ty_ausp_data,
       gt_cdhdr TYPE TABLE OF ty_cdhdr_data,
       gs_cdhdr TYPE ty_cdhdr_data.
+
+"--- Added for Prefetch and Operation Cache
+DATA: gt_operations TYPE TABLE OF ty_op,
+      gt_tj02t      TYPE TABLE OF tj02t.
 
 "--- Misc
 DATA: gv_atinn TYPE atinn.   "INTERFACE characteristic ID
