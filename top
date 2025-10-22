@@ -1,31 +1,43 @@
 *&---------------------------------------------------------------------*
-*& Include          ZIN_CMX_WORKORDER_TOP
+*& Include ZTR_A2R_KCMP_STATUS_TOP
 *&---------------------------------------------------------------------*
 
-CONSTANTS: c_stat_rel  TYPE jest-stat VALUE 'I0002',   "Released
-           c_stat_teco TYPE jest-stat VALUE 'I0045',   "Technically Completed
-           c_stat_lkd  TYPE jest-stat VALUE 'I0043',   "Locked
-           c_stat_cmxc TYPE jest-stat VALUE 'E0010',   "CMX Confirmed
-           c_stat_cmxs TYPE jest-stat VALUE 'E0014'.   "Sent to CMX
+TABLES: aufk, afih, afko, jest, jsto, resb.
 
-TYPES: BEGIN OF ty_output,
-         order_msg_status TYPE char10,              "OrderMessageStatus
-         werks            TYPE werks_d,             "Plant
-         aufnr            TYPE aufnr,               "MaintenanceOrder
-         vornr            TYPE vornr,               "MaintenanceOrderOperation
-         stat_txt         TYPE char40,              "SystemStatusText
-         obj_txt          TYPE char30,              "TechnicalObject
-         gstrp            TYPE viaufkst-gstrp,      "Basic Start Date
-         gltrp            TYPE viaufkst-gltrp,      "Basic End Date
-         lacdate          TYPE viaufkst-lacd_date,  "Latest Acceptable Date
-         system_id        TYPE sy-sysid,            "SystemId (for CPI)
-         msg              TYPE char72,              "Error Message
-       END OF ty_output.
+"--------------------------------------------------------------------*
+" Type Definitions
+"--------------------------------------------------------------------*
+TYPES: BEGIN OF lty_order,
+         aufnr TYPE aufk-aufnr,
+         auart TYPE aufk-auart,
+         iwerk TYPE afih-iwerk,
+         erdat TYPE aufk-erdat,
+         gstrp TYPE afko-gstrp,
+         gltrp TYPE afko-gltrp,
+         objnr TYPE aufk-objnr,
+       END OF lty_order.
 
-DATA: gt_output TYPE TABLE OF ty_output,
-      gs_output TYPE ty_output.
+TYPES: BEGIN OF lty_log,
+         aufnr  TYPE aufk-aufnr,
+         auart  TYPE aufk-auart,
+         iwerk  TYPE afih-iwerk,
+         msgtxt TYPE string,
+         light  TYPE char1,  " G/Y/R indicator
+       END OF lty_log.
 
-DATA: gt_orders TYPE TABLE OF viaufkst,
-      gs_order  TYPE viaufkst.
+"--------------------------------------------------------------------*
+" Global Data
+"--------------------------------------------------------------------*
+DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
+      gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY.
 
-DATA: gv_atinn TYPE atinn.   "INTERFACE characteristic ID
+DATA: gv_user  TYPE sy-uname,
+      gv_now   TYPE sy-datum,
+      gc_estat TYPE tj30-estat.  " internal KCMP code resolved dynamically
+
+"--------------------------------------------------------------------*
+" Constants
+"--------------------------------------------------------------------*
+CONSTANTS:
+  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
+  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
