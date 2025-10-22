@@ -1,43 +1,80 @@
 *&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_TOP
+*& Include          ZIN_A2R_CMX_WORKORDER_TOP
 *&---------------------------------------------------------------------*
 
-TABLES: aufk, afih, afko, jest, jsto, resb.
-
-"--------------------------------------------------------------------*
-" Type Definitions
-"--------------------------------------------------------------------*
-TYPES: BEGIN OF lty_order,
-         aufnr TYPE aufk-aufnr,
-         auart TYPE aufk-auart,
-         iwerk TYPE afih-iwerk,
-         erdat TYPE aufk-erdat,
-         gstrp TYPE afko-gstrp,
-         gltrp TYPE afko-gltrp,
-         objnr TYPE aufk-objnr,
-       END OF lty_order.
-
-TYPES: BEGIN OF lty_log,
-         aufnr  TYPE aufk-aufnr,
-         auart  TYPE aufk-auart,
-         iwerk  TYPE afih-iwerk,
-         msgtxt TYPE string,
-         light  TYPE char1,  " G/Y/R indicator
-       END OF lty_log.
-
-"--------------------------------------------------------------------*
-" Global Data
-"--------------------------------------------------------------------*
-DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
-      gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY.
-
-DATA: gv_user  TYPE sy-uname,
-      gv_now   TYPE sy-datum,
-      gc_estat TYPE tj30-estat.  " internal KCMP code resolved dynamically
-
-"--------------------------------------------------------------------*
-" Constants
-"--------------------------------------------------------------------*
 CONSTANTS:
-  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
-  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
+  c_stat_rel  TYPE jest-stat VALUE 'I0002',   "Released
+  c_stat_teco TYPE jest-stat VALUE 'I0045',   "Technically Completed
+  c_stat_lkd  TYPE jest-stat VALUE 'I0043',   "Locked
+  c_stat_cmxc TYPE jest-stat VALUE 'E0010',   "CMX Confirmed
+  c_stat_cmxs TYPE jest-stat VALUE 'E0014'.   "Sent to CMX
+
+
+*---------------------------------------------------------------------*
+* Type Definitions
+*---------------------------------------------------------------------*
+
+"--- Output structure for ALV display
+TYPES: BEGIN OF ty_output,
+         OrderMessageStatus        TYPE char10,
+         Plant                     TYPE werks_d,
+         MaintenanceOrder          TYPE aufnr,
+         MaintenanceOrderOperation TYPE vornr,
+         SystemStatusText          TYPE char40,
+         TechnicalObject           TYPE char30,
+         MaintOrdBasicStartDate    TYPE viaufkst-gstrp,
+         MaintOrdBasicEndDate      TYPE viaufkst-gltrp,
+         LatestAcceptableComplDate TYPE viaufkst-lacd_date,
+         SystemId                  TYPE sy-sysid,
+         Msg                       TYPE char72,
+       END OF ty_output.
+
+"--- Prefetch helper structures
+TYPES: BEGIN OF ty_jest_data,
+         objnr TYPE jest-objnr,
+         stat  TYPE jest-stat,
+         inact TYPE jest-inact,
+       END OF ty_jest_data.
+
+TYPES: BEGIN OF ty_inob_data,
+         objek TYPE inob-objek,
+         cuobj TYPE inob-cuobj,
+       END OF ty_inob_data.
+
+TYPES: BEGIN OF ty_ausp_data,
+         objek TYPE ausp-objek,
+         atinn TYPE ausp-atinn,
+         atwrt TYPE ausp-atwrt,
+       END OF ty_ausp_data.
+
+TYPES: BEGIN OF ty_cdhdr_data,
+         objectid TYPE cdhdr-objectid,
+         udate    TYPE cdhdr-udate,
+         utime    TYPE cdhdr-utime,
+       END OF ty_cdhdr_data.
+
+
+*---------------------------------------------------------------------*
+* Data Declarations
+*---------------------------------------------------------------------*
+
+"--- Main output
+DATA: gt_output TYPE TABLE OF ty_output,
+      gs_output TYPE ty_output.
+
+"--- Orders
+DATA: gt_orders TYPE TABLE OF viaufkst,
+      gs_order  TYPE viaufkst.
+
+"--- Prefetched master data tables
+DATA: gt_jest  TYPE TABLE OF ty_jest_data,
+      gs_jest  TYPE ty_jest_data,
+      gt_inob  TYPE TABLE OF ty_inob_data,
+      gs_inob  TYPE ty_inob_data,
+      gt_ausp  TYPE TABLE OF ty_ausp_data,
+      gs_ausp  TYPE ty_ausp_data,
+      gt_cdhdr TYPE TABLE OF ty_cdhdr_data,
+      gs_cdhdr TYPE ty_cdhdr_data.
+
+"--- Misc
+DATA: gv_atinn TYPE atinn.   "INTERFACE characteristic ID
