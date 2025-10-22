@@ -1,80 +1,135 @@
-FUNCTION zlonza_alv_popup_table.
-*"----------------------------------------------------------------------
-*"*"Local Interface:
-*"  IMPORTING
-*"     VALUE(iv_start_col)  TYPE i DEFAULT 25
-*"     VALUE(iv_start_line) TYPE i DEFAULT 6
-*"     VALUE(iv_end_col)    TYPE i DEFAULT 100
-*"     VALUE(iv_end_line)   TYPE i DEFAULT 10
-*"     VALUE(iv_title)      TYPE string DEFAULT 'ALV'
-*"     VALUE(it_field_names) TYPE STANDARD TABLE OPTIONAL
-*"  CHANGING
-*"     VALUE(it_table) TYPE STANDARD TABLE OPTIONAL
-*"  EXPORTING
-*"     VALUE(ev_choice) TYPE flag
-*"----------------------------------------------------------------------
-  DATA: lo_popup  TYPE REF TO cl_reca_gui_f4_popup,
-        lt_names  TYPE STANDARD TABLE OF zzs_alv_popup_names,
-        ls_names  TYPE zzs_alv_popup_names,
-        lv_cancel TYPE abap_bool,
-        lt_result TYPE STANDARD TABLE OF string.
+*----------------------------------------------------------------------*
+***INCLUDE LZLONZA_ALV_POPUPO01.
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0100  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS '100'.
+  SET TITLEBAR '100' WITH gv_title_text.
 
-  IF it_table IS INITIAL.
-    RETURN.
-  ENDIF.
+ENDMODULE.                 " STATUS_0100  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Module  SCREEN_MODIFY_0100  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE screen_modify_0100 OUTPUT.
 
-  " Create popup instance
-  CALL METHOD cl_reca_gui_f4_popup=>factory_grid
-    EXPORTING
-      it_f4value     = it_table
-      if_multi       = abap_false
-      id_title       = iv_title
-    RECEIVING
-      ro_f4_instance = lo_popup.
+  LOOP AT SCREEN.
+    CASE screen-name.
+      WHEN 'BUTTON1'.
+        IF gv_button1_text IS INITIAL.
+          screen-invisible = 1.
+        ENDIF.
+      WHEN 'BUTTON2'.
+        IF gv_button2_text IS INITIAL.
+          screen-invisible = 1.
+        ENDIF.
+      WHEN 'BUTTON3'.
+        IF gv_button3_text IS INITIAL.
+          screen-invisible = 1.
+        ENDIF.
+      WHEN 'BUTTON4'.
+        IF gv_button4_text IS INITIAL.
+          screen-invisible = 1.
+        ENDIF.
+      WHEN 'BUTTON5'.
+        IF gv_button5_text IS INITIAL.
+          screen-invisible = 1.
+        ENDIF.
+      WHEN OTHERS.
+    ENDCASE.
 
-  CHECK lo_popup IS BOUND.
-
-  MOVE-CORRESPONDING it_field_names TO lt_names.
-
-  LOOP AT lt_names INTO ls_names.
-    CALL METHOD lo_popup->set_field_text
-      EXPORTING
-        id_fieldname = ls_names-fieldname
-        id_text      = ls_names-heading.
+    MODIFY SCREEN.
   ENDLOOP.
 
-  " Add a custom OK (Check) button to the popup
-  lo_popup->mo_alv_grid->set_toolbar_interactive( abap_true ).
-  lo_popup->mo_alv_grid->register_edit_event( cl_gui_alv_grid=>mc_evt_modified ).
+ENDMODULE.                 " SCREEN_MODIFY_0100  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Module  LISTPROCESSING  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE listprocessing OUTPUT.
+  LEAVE TO LIST-PROCESSING AND RETURN TO SCREEN 100.
+  LOOP AT gt_value INTO gv_value.
+    WRITE: / gv_value.
+    NEW-LINE.
+*    ULINE.
+  ENDLOOP.
+  SET CURSOR LINE 1.
+  LEAVE SCREEN.
+ENDMODULE.                 " LISTPROCESSING  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+  CLEAR: gv_action.
+  CASE gv_ok_code.
+    WHEN '&ONT'.
+      gv_action = 1.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT1'.
+      gv_action = 1.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT2'.
+      gv_action = 2.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT3'.
+      gv_action = 3.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT4'.
+      gv_action = 4.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT5'.
+      gv_action = 5.
+      LEAVE TO SCREEN 0.
+    WHEN OTHERS.
+  ENDCASE.
+ENDMODULE.                 " USER_COMMAND_0100  INPUT
 
-  " Add the OK button (green check)
-  DATA(lo_toolbar) = lo_popup->mo_alv_grid->get_frontend_services( ).
-  lo_toolbar->add_toolbar_button(
-      i_function = 'OK'
-      i_icon     = icon_okay
-      i_text     = 'Check'
-      i_quickinfo = 'Confirm and Continue' ).
 
-  " Display popup
-  CALL METHOD lo_popup->display
-    EXPORTING
-      id_start_column    = iv_start_col
-      id_start_line      = iv_start_line
-      id_end_column      = iv_end_col
-      id_end_line        = iv_end_line
-      if_send_cancel_msg = abap_false
-    IMPORTING
-      et_result          = lt_result
-      ef_cancelled       = lv_cancel.
 
-  " Handle user choice
-  IF lv_cancel = abap_true.
-    ev_choice = abap_false.
-  ELSE.
-    IF lt_result IS NOT INITIAL.
-      it_table = lt_result.
-    ENDIF.
-    ev_choice = abap_true.
-  ENDIF.
+FUNCTION-POOL zlonza_alv_popup.             "MESSAGE-ID ..
 
-ENDFUNCTION.
+* INCLUDE LZLONZA_ALV_POPUPD...              " Local class definition
+
+DATA:
+  gt_value        TYPE TABLE OF string,
+  gv_value        LIKE LINE OF gt_value,
+  gv_index        TYPE sy-tabix,
+  gv_action       TYPE int4,
+  gv_button1_text TYPE char30,
+  gv_button2_text TYPE char30,
+  gv_button3_text TYPE char30,
+  gv_button4_text TYPE char30,
+  gv_button5_text TYPE char30,
+  gv_title_text   TYPE char80,
+  gv_ok_code      TYPE sy-ucomm.
+
+
+AT USER-COMMAND.
+  CLEAR: gv_action, gv_index.
+  GET CURSOR LINE gv_index.
+  CASE sy-ucomm.
+    WHEN 'BUT1'.
+      gv_action = 1.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT2'.
+      gv_action = 2.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT3'.
+      gv_action = 3.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT4'.
+      gv_action = 4.
+      LEAVE TO SCREEN 0.
+    WHEN 'BUT5'.
+      gv_action = 5.
+      LEAVE TO SCREEN 0.
+    WHEN OTHERS.
+  ENDCASE.
