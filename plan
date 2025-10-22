@@ -7,8 +7,6 @@ FORM f_prefetch_data.
     RETURN.
   ENDIF.
 
-  DATA(lv_mandt) = sy-mandt.
-
   "---------------------------------------------------------------"
   " Prefetch all JEST statuses for all orders
   "---------------------------------------------------------------"
@@ -55,14 +53,25 @@ FORM f_prefetch_data.
   "---------------------------------------------------------------"
   " Prefetch CDHDR (change documents for orders)
   "---------------------------------------------------------------"
-  SELECT c~objectid,
-         c~udate,
-         c~utime
-    FROM cdhdr AS c
-    INNER JOIN viaufkst AS v
-      ON c~objectid = CONCAT( lv_mandt, CONCAT( '30', v~aufnr ) )
-    WHERE c~objectclas = 'ORDER'
-    INTO TABLE @gt_cdhdr.
+  DATA: lt_objid TYPE TABLE OF cdhdr-objectid,
+        lv_objid TYPE cdhdr-objectid,
+        ls_order TYPE viaufkst.
+
+  LOOP AT gt_orders INTO ls_order.
+    CONCATENATE sy-mandt '30' ls_order-aufnr INTO lv_objid.
+    APPEND lv_objid TO lt_objid.
+  ENDLOOP.
+
+  DELETE ADJACENT DUPLICATES FROM lt_objid.
+
+  SELECT objectid,
+         udate,
+         utime
+    FROM cdhdr
+    INTO TABLE @gt_cdhdr
+    FOR ALL ENTRIES IN @lt_objid
+    WHERE objectclas = 'ORDER'
+      AND objectid   = @lt_objid-table_line.
 
   SORT gt_cdhdr BY objectid udate utime.
   DELETE ADJACENT DUPLICATES FROM gt_cdhdr COMPARING objectid udate utime.
