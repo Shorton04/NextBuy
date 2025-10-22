@@ -1,135 +1,75 @@
-*----------------------------------------------------------------------*
-***INCLUDE LZLONZA_ALV_POPUPO01.
-*----------------------------------------------------------------------*
-*&---------------------------------------------------------------------*
-*&      Module  STATUS_0100  OUTPUT
-*&---------------------------------------------------------------------*
-*       text
-*----------------------------------------------------------------------*
-MODULE status_0100 OUTPUT.
-  SET PF-STATUS '100'.
-  SET TITLEBAR '100' WITH gv_title_text.
+FUNCTION zlonza_alv_popup_table.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IV_START_COL) TYPE  I DEFAULT 25
+*"     REFERENCE(IV_START_LINE) TYPE  I DEFAULT 6
+*"     REFERENCE(IV_END_COL) TYPE  I DEFAULT 120
+*"     REFERENCE(IV_END_LINE) TYPE  I DEFAULT 25
+*"     REFERENCE(IV_TITLE) TYPE  STRING DEFAULT 'ALV Popup'
+*"  EXPORTING
+*"     REFERENCE(EV_CHOICE) TYPE  FLAG
+*"  CHANGING
+*"     REFERENCE(IT_TABLE) TYPE  STANDARD TABLE
+*"     REFERENCE(IT_FIELD_NAMES) TYPE STANDARD TABLE OPTIONAL
+*"----------------------------------------------------------------------
 
-ENDMODULE.                 " STATUS_0100  OUTPUT
-*&---------------------------------------------------------------------*
-*&      Module  SCREEN_MODIFY_0100  OUTPUT
-*&---------------------------------------------------------------------*
-*       text
-*----------------------------------------------------------------------*
-MODULE screen_modify_0100 OUTPUT.
+  DATA: lo_popup     TYPE REF TO cl_reca_gui_f4_popup,
+        lt_names     TYPE STANDARD TABLE OF zzs_alv_popup_names,
+        ls_names     TYPE zzs_alv_popup_names,
+        lv_choice    TYPE flag,
+        lv_action    TYPE i.
 
-  LOOP AT SCREEN.
-    CASE screen-name.
-      WHEN 'BUTTON1'.
-        IF gv_button1_text IS INITIAL.
-          screen-invisible = 1.
-        ENDIF.
-      WHEN 'BUTTON2'.
-        IF gv_button2_text IS INITIAL.
-          screen-invisible = 1.
-        ENDIF.
-      WHEN 'BUTTON3'.
-        IF gv_button3_text IS INITIAL.
-          screen-invisible = 1.
-        ENDIF.
-      WHEN 'BUTTON4'.
-        IF gv_button4_text IS INITIAL.
-          screen-invisible = 1.
-        ENDIF.
-      WHEN 'BUTTON5'.
-        IF gv_button5_text IS INITIAL.
-          screen-invisible = 1.
-        ENDIF.
-      WHEN OTHERS.
-    ENDCASE.
+  " Check for empty table
+  IF it_table IS INITIAL.
+    MESSAGE 'No data to display.' TYPE 'I'.
+    RETURN.
+  ENDIF.
 
-    MODIFY SCREEN.
-  ENDLOOP.
+  " Create popup ALV grid
+  CALL METHOD cl_reca_gui_f4_popup=>factory_grid
+    EXPORTING
+      it_f4value     = it_table[]
+      if_multi       = abap_false
+      id_title       = iv_title
+    RECEIVING
+      ro_f4_instance = lo_popup.
 
-ENDMODULE.                 " SCREEN_MODIFY_0100  OUTPUT
-*&---------------------------------------------------------------------*
-*&      Module  LISTPROCESSING  OUTPUT
-*&---------------------------------------------------------------------*
-*       text
-*----------------------------------------------------------------------*
-MODULE listprocessing OUTPUT.
-  LEAVE TO LIST-PROCESSING AND RETURN TO SCREEN 100.
-  LOOP AT gt_value INTO gv_value.
-    WRITE: / gv_value.
-    NEW-LINE.
-*    ULINE.
-  ENDLOOP.
-  SET CURSOR LINE 1.
-  LEAVE SCREEN.
-ENDMODULE.                 " LISTPROCESSING  OUTPUT
-*&---------------------------------------------------------------------*
-*&      Module  USER_COMMAND_0100  INPUT
-*&---------------------------------------------------------------------*
-*       text
-*----------------------------------------------------------------------*
-MODULE user_command_0100 INPUT.
-  CLEAR: gv_action.
-  CASE gv_ok_code.
-    WHEN '&ONT'.
-      gv_action = 1.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT1'.
-      gv_action = 1.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT2'.
-      gv_action = 2.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT3'.
-      gv_action = 3.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT4'.
-      gv_action = 4.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT5'.
-      gv_action = 5.
-      LEAVE TO SCREEN 0.
+  IF lo_popup IS NOT BOUND.
+    RETURN.
+  ENDIF.
+
+  " Set custom column headings (if provided)
+  IF it_field_names IS NOT INITIAL.
+    MOVE-CORRESPONDING it_field_names[] TO lt_names.
+    LOOP AT lt_names INTO ls_names.
+      CALL METHOD lo_popup->set_field_text
+        EXPORTING
+          id_fieldname = ls_names-fieldname
+          id_text      = ls_names-heading.
+    ENDLOOP.
+  ENDIF.
+
+  " Show the popup screen (100) with toolbar
+  gv_title_text   = iv_title.
+  gv_button1_text = ' '.
+  gv_button2_text = ' '.
+  gv_button3_text = ' '.
+  gv_button4_text = ' '.
+  gv_button5_text = ' '.
+
+  CALL SCREEN 100
+    STARTING AT iv_start_col iv_start_line
+    ENDING   AT iv_end_col   iv_end_line.
+
+  " After popup closed, check the user action
+  lv_action = gv_action.
+
+  CASE lv_action.
+    WHEN 9.  " 'Check' button pressed (custom code)
+      ev_choice = 'C'.
     WHEN OTHERS.
+      ev_choice = ' '.
   ENDCASE.
-ENDMODULE.                 " USER_COMMAND_0100  INPUT
 
-
-
-FUNCTION-POOL zlonza_alv_popup.             "MESSAGE-ID ..
-
-* INCLUDE LZLONZA_ALV_POPUPD...              " Local class definition
-
-DATA:
-  gt_value        TYPE TABLE OF string,
-  gv_value        LIKE LINE OF gt_value,
-  gv_index        TYPE sy-tabix,
-  gv_action       TYPE int4,
-  gv_button1_text TYPE char30,
-  gv_button2_text TYPE char30,
-  gv_button3_text TYPE char30,
-  gv_button4_text TYPE char30,
-  gv_button5_text TYPE char30,
-  gv_title_text   TYPE char80,
-  gv_ok_code      TYPE sy-ucomm.
-
-
-AT USER-COMMAND.
-  CLEAR: gv_action, gv_index.
-  GET CURSOR LINE gv_index.
-  CASE sy-ucomm.
-    WHEN 'BUT1'.
-      gv_action = 1.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT2'.
-      gv_action = 2.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT3'.
-      gv_action = 3.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT4'.
-      gv_action = 4.
-      LEAVE TO SCREEN 0.
-    WHEN 'BUT5'.
-      gv_action = 5.
-      LEAVE TO SCREEN 0.
-    WHEN OTHERS.
-  ENDCASE.
+ENDFUNCTION.
