@@ -1,38 +1,87 @@
 *---------------------------------------------------------------------*
-* Prepare output (Optimized)
+* Prefetch related master data (Optimized for S/4HANA)
 *---------------------------------------------------------------------*
-FORM f_prepare_output USING ps_order TYPE viaufkst
-                            pv_vornr TYPE vornr
-                            pv_stat  TYPE jest-stat.
+FORM f_prefetch_data.
 
-  CLEAR gs_output.
-
-  gs_output-OrderMessageStatus        = 'CREATE'.
-  gs_output-Plant                     = ps_order-iwerk.
-  gs_output-MaintenanceOrder          = ps_order-aufnr.
-  gs_output-MaintenanceOrderOperation = pv_vornr.
-  gs_output-MaintOrdBasicStartDate    = ps_order-gstrp.
-  gs_output-MaintOrdBasicEndDate      = ps_order-gltrp.
-  gs_output-LatestAcceptableComplDate = ps_order-lacd_date.
-  gs_output-SystemId                  = sy-sysid.
-
-  " Determine final system status text (from prefetched data)
-  DATA(lv_teco_active) = abap_false.
-  READ TABLE gt_jest WITH KEY objnr = ps_order-objnr stat = 'I0045' inact = '' TRANSPORTING NO FIELDS.
-  IF sy-subrc = 0.
-    lv_teco_active = abap_true.
+  IF gt_orders IS INITIAL.
+    RETURN.
   ENDIF.
 
-  READ TABLE gt_tj02t INTO DATA(ls_tj02t)
-    WITH KEY istat = COND #( WHEN lv_teco_active = abap_true THEN 'I0045' ELSE pv_stat ).
-  IF sy-subrc = 0.
-    gs_output-SystemStatusText = ls_tj02t-txt04.
+  DATA: lt_objek      TYPE TABLE OF inob-objek,
+        lt_objnr      TYPE TABLE OF jest-objnr,
+        lt_objectid   TYPE TABLE OF cdhdr-objectid,
+        lt_cuobj      TYPE TABLE OF inob-cuobj.
+
+  LOOP AT gt_orders INTO DATA(ls_order).
+    IF ls_order-equnr IS NOT INITIAL.
+      APPEND ls_order-equnr TO lt_objek.
+    ENDIF.
+
+    IF ls_order-tplnr IS NOT INITIAL.
+      APPEND ls_order-tplnr TO lt_objek.
+    ENDIF.
+
+    APPEND ls_order-objnr TO lt_objnr.
+    CONCATENATE sy-mandt '30' ls_order-aufnr INTO DATA(lv_objid).
+    APPEND lv_objid TO lt_objectid.
+  ENDLOOP.
+
+  SORT lt_objek     BY table_line. DELETE ADJACENT DUPLICATES FROM lt_objek.
+  SORT lt_objnr     BY table_line. DELETE ADJACENT DUPLICATES FROM lt_objnr.
+  SORT lt_objectid  BY table_line. DELETE ADJACENT DUPLICATES FROM lt_objectid.
+
+  " 1️⃣ INOB (object classification link)
+  SELECT objek, cuobj
+    FROM inob
+    INTO TABLE @gt_inob
+    FOR ALL ENTRIES IN @lt_objek
+    WHERE objek = @lt_objek-table_line.
+
+  " 2️⃣ AUSP (characteristics values)
+  IF gt_inob IS NOT INITIAL.
+    SELECT objek, atinn, atwrt
+      FROM ausp
+      FOR ALL ENTRIES IN @gt_inob
+      WHERE objek = @gt_inob-cuobj
+      INTO TABLE @gt_ausp.
   ENDIF.
 
-  IF ps_order-equnr IS NOT INITIAL.
-    gs_output-TechnicalObject = ps_order-equnr.
-  ELSE.
-    gs_output-TechnicalObject = ps_order-tplnr.
+  " 3️⃣ JEST (system statuses)
+  SELECT objnr, stat, inact
+    FROM jest
+    FOR ALL ENTRIES IN @lt_objnr
+    WHERE objnr = @lt_objnr-table_line
+    INTO TABLE @gt_jest.
+
+  " 4️⃣ JCDS (status change log)
+  SELECT objnr, stat, udate, utime, inact
+    FROM jcds
+    FOR ALL ENTRIES IN @lt_objnr
+    WHERE objnr = @lt_objnr-table_line
+      AND stat IN ('I0043','I0045','I0002')
+    INTO TABLE @gt_jcds.
+
+  " 5️⃣ CDHDR (change header for ORDER)
+  SELECT objectid, udate, utime
+    FROM cdhdr
+    FOR ALL ENTRIES IN @lt_objectid
+    WHERE objectclas = 'ORDER'
+      AND objectid   = @lt_objectid-table_line
+    INTO TABLE @gt_cdhdr.
+
+  " 6️⃣ TJ02T (status texts, only once)
+  IF gt_tj02t IS INITIAL.
+    SELECT istat, txt04
+      FROM tj02t
+      WHERE spras = 'E'
+      INTO TABLE @gt_tj02t.
   ENDIF.
+
+  SORT gt_inob   BY objek.
+  SORT gt_ausp   BY objek atinn.
+  SORT gt_jest   BY objnr stat.
+  SORT gt_jcds   BY objnr stat.
+  SORT gt_cdhdr  BY objectid.
+  SORT gt_tj02t  BY istat.
 
 ENDFORM.
