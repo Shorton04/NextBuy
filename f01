@@ -6,21 +6,20 @@ FUNCTION zlonza_alv_popup_table.
 *"     REFERENCE(iv_start_line) TYPE i DEFAULT 6
 *"     REFERENCE(iv_end_col)   TYPE i DEFAULT 120
 *"     REFERENCE(iv_end_line)  TYPE i DEFAULT 25
-*"     REFERENCE(iv_title)     TYPE string DEFAULT 'ALV Display'
+*"     REFERENCE(iv_title)     TYPE c DEFAULT 'ALV Display'
 *"  EXPORTING
 *"     REFERENCE(ev_choice)    TYPE flag
 *"  CHANGING
 *"     REFERENCE(it_table)     TYPE STANDARD TABLE OPTIONAL
 *"----------------------------------------------------------------------
 
-  DATA: lo_container       TYPE REF TO cl_gui_dialogbox_container,
-        lo_salv            TYPE REF TO cl_salv_table,
-        lo_functions       TYPE REF TO cl_salv_functions,
-        lo_display         TYPE REF TO cl_salv_display_settings,
-        lo_selections      TYPE REF TO cl_salv_selections,
-        lv_caption_s       TYPE string,
-        lv_caption_c       TYPE c LENGTH 80,
-        lv_answer          TYPE c.
+  DATA: lo_container  TYPE REF TO cl_gui_dialogbox_container,
+        lo_salv       TYPE REF TO cl_salv_table,
+        lo_functions  TYPE REF TO cl_salv_functions,
+        lo_display    TYPE REF TO cl_salv_display_settings,
+        lo_selections TYPE REF TO cl_salv_selections,
+        lv_caption    TYPE c LENGTH 80,
+        lv_answer     TYPE c.
 
   FIELD-SYMBOLS: <fs_table> TYPE STANDARD TABLE.
 
@@ -28,21 +27,20 @@ FUNCTION zlonza_alv_popup_table.
     RETURN.
   ENDIF.
 
-  " Prepare caption types
-  lv_caption_s = iv_title.
-  lv_caption_c = lv_caption_s. " safely assign to CHAR(80)
+  " Title as CHAR type (avoid STRING mismatch)
+  lv_caption = iv_title.
 
-  " Create popup container for ALV (needs CHAR caption)
+  " Create popup container for ALV
   CREATE OBJECT lo_container
     EXPORTING
-      caption = lv_caption_c
+      caption = lv_caption
       top     = iv_start_line
       left    = iv_start_col
       width   = iv_end_col
       height  = iv_end_line.
 
   TRY.
-      " Create SALV table inside popup container
+      " Create SALV table in popup container
       CALL METHOD cl_salv_table=>factory
         EXPORTING
           r_container = lo_container
@@ -51,7 +49,7 @@ FUNCTION zlonza_alv_popup_table.
         CHANGING
           t_table      = it_table.
 
-      " === No chained calls from here on ===
+      " Enable all ALV functions
       CALL METHOD lo_salv->get_functions
         RECEIVING
           value = lo_functions.
@@ -60,18 +58,21 @@ FUNCTION zlonza_alv_popup_table.
         EXPORTING
           value = abap_true.
 
+      " Display settings
       CALL METHOD lo_salv->get_display_settings
         RECEIVING
           value = lo_display.
 
+      " Use CHAR for caption value to match parameter type
       CALL METHOD lo_display->set_list_header
         EXPORTING
-          value = lv_caption_s.
+          value = lv_caption.
 
       CALL METHOD lo_display->set_striped_pattern
         EXPORTING
           value = abap_true.
 
+      " Selection behavior
       CALL METHOD lo_salv->get_selections
         RECEIVING
           value = lo_selections.
@@ -80,13 +81,13 @@ FUNCTION zlonza_alv_popup_table.
         EXPORTING
           value = if_salv_c_selection_mode=>row_column.
 
-      " Display the SALV ALV grid
+      " Display ALV popup
       CALL METHOD lo_salv->display.
 
-      " Popup confirmation
+      " Optional confirmation popup
       CALL FUNCTION 'POPUP_TO_CONFIRM'
         EXPORTING
-          titlebar       = lv_caption_s
+          titlebar       = lv_caption
           text_question  = 'Do you want to continue?'
           text_button_1  = 'Yes'
           text_button_2  = 'No'
@@ -104,7 +105,7 @@ FUNCTION zlonza_alv_popup_table.
       MESSAGE lx_salv->get_text( ) TYPE 'E'.
   ENDTRY.
 
-  " Free container
+  " Free popup container
   IF lo_container IS BOUND.
     CALL METHOD lo_container->free.
   ENDIF.
