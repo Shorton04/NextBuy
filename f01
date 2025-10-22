@@ -20,7 +20,6 @@ FUNCTION zlonza_alv_popup_table.
         lo_columns     TYPE REF TO cl_salv_columns_table,
         lo_column      TYPE REF TO cl_salv_column_table,
         lo_functions   TYPE REF TO cl_salv_functions_list,
-        lv_user_action TYPE sy-ucomm,
         lv_choice      TYPE flag,
         lt_names       TYPE STANDARD TABLE OF zzs_alv_popup_names,
         ls_names       TYPE zzs_alv_popup_names,
@@ -32,20 +31,20 @@ FUNCTION zlonza_alv_popup_table.
     RETURN.
   ENDIF.
 
-  " Assign title safely for non-string parameter
+  " Assign title safely (convert string → char)
   lv_title = iv_title.
 
   TRY.
 
-      " Create popup container
+      " Create popup container - POSITION is mandatory on older GUI versions
       CREATE OBJECT lo_container
         EXPORTING
-          caption = lv_title
-          top     = iv_start_line
-          left    = iv_start_col
-          width   = iv_end_col
-          height  = iv_end_line
-          position = cl_gui_dialogbox_container=>position_center.
+          caption  = lv_title
+          top      = iv_start_line
+          left     = iv_start_col
+          width    = iv_end_col
+          height   = iv_end_line
+          position = 1.  " 1=centered, 2=top-left, etc. for older kernels
 
       " Create SALV table
       CALL METHOD cl_salv_table=>factory
@@ -71,12 +70,20 @@ FUNCTION zlonza_alv_popup_table.
         LOOP AT lt_names INTO ls_names.
           TRY.
               lo_column = lo_columns->get_column( ls_names-fieldname ).
+
+              " Older kernel requires explicit VALUE assignment
               CALL METHOD lo_column->set_short_text
-                EXPORTING value = ls_names-heading.
+                EXPORTING
+                  value = ls_names-heading.
+
               CALL METHOD lo_column->set_medium_text
-                EXPORTING value = ls_names-heading.
+                EXPORTING
+                  value = ls_names-heading.
+
               CALL METHOD lo_column->set_long_text
-                EXPORTING value = ls_names-heading.
+                EXPORTING
+                  value = ls_names-heading.
+
             CATCH cx_salv_not_found.
           ENDTRY.
         ENDLOOP.
@@ -104,15 +111,16 @@ FUNCTION zlonza_alv_popup_table.
       " Display ALV
       CALL METHOD lo_alv->display.
 
-      " Flush GUI queue
+      " Flush GUI to render
       CALL METHOD cl_gui_cfw=>flush.
 
+      " Basic wait for user action (for popup)
       WAIT UP TO 1 SECONDS.
 
-      " Assume continue by default
+      " Default continue
       lv_choice = 'X'.
 
-      " Free container when done
+      " Cleanup
       IF lo_container IS BOUND.
         CALL METHOD lo_container->free.
       ENDIF.
