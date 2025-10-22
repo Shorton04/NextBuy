@@ -1,28 +1,31 @@
 *&---------------------------------------------------------------------*
-*& Include          ZIN_CMX_WORKORDER_SEL
+*& Include ZTR_A2R_KCMP_STATUS_SEL
 *&---------------------------------------------------------------------*
-TABLES: viaufkst, afvc, jest, cabn, ausp, inob, cdhdr, tj02t.
+SELECTION-SCREEN BEGIN OF BLOCK b01 WITH FRAME TITLE text-s01.
+SELECT-OPTIONS:
+  s_aufnr FOR aufk-aufnr,
+  s_auart FOR aufk-auart,
+  s_iwerk FOR afih-iwerk,
+  s_erdat FOR aufk-erdat,
+  s_gstrp FOR afko-gstrp,
+  s_gltrp FOR afko-gltrp.
+SELECTION-SCREEN END OF BLOCK b01.
 
-SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+SELECTION-SCREEN BEGIN OF BLOCK b04 WITH FRAME TITLE text-s04.
+SELECT-OPTIONS:
+  s_statin FOR jest-stat NO INTERVALS,  " Inclusive statuses (e.g. REL)
+  s_statex FOR jest-stat NO INTERVALS.  " Exclusive statuses (e.g. KCMP, TECO)
+SELECTION-SCREEN END OF BLOCK b04.
 
-  SELECT-OPTIONS: so_werks FOR viaufkst-iwerk OBLIGATORY,   "Plant
-                  so_auart FOR viaufkst-auart OBLIGATORY,   "Order Type
-                  so_aufnr FOR viaufkst-aufnr,              "Order Number
-                  so_equnr FOR viaufkst-equnr,              "Equipment
-                  so_floc  FOR viaufkst-tplnr,              "Functional Location
-                  so_date  FOR sy-datum NO-EXTENSION,       "Check from Date
-                  so_time  FOR sy-uzeit NO-EXTENSION.       "Check from Time
+SELECTION-SCREEN BEGIN OF BLOCK b02 WITH FRAME TITLE text-s02.
+PARAMETERS:
+  p_reserv AS CHECKBOX DEFAULT 'X',
+  p_preq   AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b02.
 
-  PARAMETERS: p_test AS CHECKBOX DEFAULT ''.               "Test Run Flag
-
-SELECTION-SCREEN END OF BLOCK b1.
-
-INITIALIZATION.
-  " Default to current date/time
-  so_date-low = sy-datum.
-  so_date-high = sy-datum.
-  so_time-low = sy-uzeit.
-  so_time-high = sy-uzeit.
-  so_date-sign = 'I'.
-  so_date-option = 'EQ'.
-  APPEND so_date.
+SELECTION-SCREEN BEGIN OF BLOCK b03 WITH FRAME TITLE text-s03.
+PARAMETERS:
+  p_spras TYPE spras DEFAULT 'E' OBLIGATORY,
+  p_set   RADIOBUTTON GROUP r1 DEFAULT 'X',
+  p_reset RADIOBUTTON GROUP r1.
+SELECTION-SCREEN END OF BLOCK b03.
