@@ -1,221 +1,5 @@
-*&---------------------------------------------------------------------*
-*& Include          ZIN_A2R_CMX_WORKORDER_F01 (updated S/4HANA style)
-*&---------------------------------------------------------------------*
-
 *---------------------------------------------------------------------*
-* Default Time
-*---------------------------------------------------------------------*
-FORM f_default_time.
-
-  DATA: lv_now_time TYPE sy-uzeit,
-        lv_from_time TYPE sy-uzeit,
-        lv_date TYPE sy-datum.
-
-  " Get current system date/time
-  lv_now_time = sy-uzeit.
-  lv_date     = sy-datum.
-
-  " Subtract 10 minutes (600 seconds)
-  lv_from_time = lv_now_time - 600.
-
-  " If subtraction crosses midnight, adjust date
-  IF lv_from_time < 0.
-    lv_from_time = lv_from_time + 86400. " add 24 hours
-    lv_date = lv_date - 1.
-  ENDIF.
-
-  " Set time range (From = now - 10 mins, To = now)
-  APPEND VALUE #( sign = 'I' option = 'BT'
-                  low  = lv_from_time
-                  high = lv_now_time ) TO so_time.
-
-  " Set date range
-  APPEND VALUE #( sign = 'I' option = 'BT'
-                  low  = lv_date
-                  high = sy-datum ) TO so_date.
-
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Fetch candidate orders
-*---------------------------------------------------------------------*
-FORM f_get_orders.
-
-  SELECT SINGLE atinn
-    INTO @gv_atinn
-    FROM cabn
-    WHERE atnam = 'INTERFACE'.
-
-  IF sy-subrc <> 0.
-    MESSAGE 'Characteristic INTERFACE not found' TYPE 'E'.
-  ENDIF.
-
-  IF so_date-low IS INITIAL OR so_time-low IS INITIAL.
-    MESSAGE 'Check from Date and Time are mandatory' TYPE 'E'.
-  ENDIF.
-
-  " Eligible orders (IDAT1 not blank OR IDAT2 >= check date)
-  SELECT *
-    FROM viaufkst
-    WHERE auart IN @so_auart
-      AND iwerk IN @so_werks
-      AND aufnr IN @so_aufnr
-      AND ( idat1 IS NOT INITIAL OR idat2 >= @so_date-low )
-    INTO TABLE @gt_orders.
-
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Prefetch related master & history data (single-shot, bulk)
-*---------------------------------------------------------------------*
-FORM f_prefetch_data.
-
-  IF gt_orders IS INITIAL.
-    RETURN.
-  ENDIF.
-
-  " Local helper tables for keys
-  DATA: lt_objek      TYPE TABLE OF inob-objek,
-        lt_objnr      TYPE TABLE OF jest-objnr,
-        lt_objectid   TYPE TABLE OF cdhdr-objectid,
-        lt_aufnr      TYPE TABLE OF afko-aufnr.
-
-  DATA: lv_objid      TYPE cdhdr-objectid.
-
-  " Collect keys from gt_orders
-  LOOP AT gt_orders INTO DATA(ls_order).
-    IF ls_order-equnr IS NOT INITIAL.
-      APPEND ls_order-equnr TO lt_objek.
-    ENDIF.
-    IF ls_order-tplnr IS NOT INITIAL.
-      APPEND ls_order-tplnr TO lt_objek.
-    ENDIF.
-    IF ls_order-objnr IS NOT INITIAL.
-      APPEND ls_order-objnr TO lt_objnr.
-    ENDIF.
-    IF ls_order-aufnr IS NOT INITIAL.
-      APPEND ls_order-aufnr TO lt_aufnr.
-      CONCATENATE sy-mandt '30' ls_order-aufnr INTO lv_objid.
-      APPEND lv_objid TO lt_objectid.
-    ENDIF.
-  ENDLOOP.
-
-  " Remove duplicates
-  SORT lt_objek.     DELETE ADJACENT DUPLICATES FROM lt_objek.
-  SORT lt_objnr.     DELETE ADJACENT DUPLICATES FROM lt_objnr.
-  SORT lt_aufnr.     DELETE ADJACENT DUPLICATES FROM lt_aufnr.
-  SORT lt_objectid.  DELETE ADJACENT DUPLICATES FROM lt_objectid.
-
-  " Prefetch INOB for objects and templates
-  CLEAR gt_inob.
-  IF lt_objek IS NOT INITIAL.
-    SELECT objek, cuobj
-      FROM inob
-      INTO TABLE @gt_inob
-      WHERE objek IN @lt_objek.
-  ENDIF.
-
-  " From prefetched INOB collect CUOBJ keys for AUSP
-  DATA(lt_cuobj) = VALUE TABLE OF inob-cuobj( ).
-  LOOP AT gt_inob INTO DATA(ls_inob).
-    IF ls_inob-cuobj IS NOT INITIAL.
-      APPEND ls_inob-cuobj TO lt_cuobj.
-    ENDIF.
-  ENDLOOP.
-  SORT lt_cuobj. DELETE ADJACENT DUPLICATES FROM lt_cuobj.
-
-  " Prefetch AUSP for the classification values (we will filter for gv_atinn in-memory)
-  CLEAR gt_ausp.
-  IF lt_cuobj IS NOT INITIAL.
-    SELECT objek, atinn, atwrt
-      FROM ausp
-      INTO TABLE @gt_ausp
-      WHERE objek IN @lt_cuobj.
-  ENDIF.
-
-  " Prefetch JEST statuses for all relevant objnr
-  CLEAR gt_jest.
-  IF lt_objnr IS NOT INITIAL.
-    SELECT objnr, stat, inact
-      FROM jest
-      INTO TABLE @gt_jest
-      WHERE objnr IN @lt_objnr.
-  ENDIF.
-
-  " Prefetch JCDS (status change history) for those objnr but only the statuses we care about
-  CLEAR gt_jcds.
-  IF lt_objnr IS NOT INITIAL.
-    SELECT objnr, stat, udate, utime
-      FROM jcds
-      INTO TABLE @gt_jcds
-      WHERE objnr IN @lt_objnr
-        AND stat IN ( 'I0043', 'I0045', 'I0002' ).
-  ENDIF.
-
-  " Prefetch CDHDR change header history for orders
-  CLEAR gt_cdhdr.
-  IF lt_objectid IS NOT INITIAL.
-    SELECT objectid, udate, utime
-      FROM cdhdr
-      INTO TABLE @gt_cdhdr
-      WHERE objectclas = 'ORDER'
-        AND objectid   IN @lt_objectid.
-  ENDIF.
-
-  " Prefetch AFKO + AFVC join for operations per order (so f_get_operation is read-only)
-  CLEAR gt_operations.
-  IF lt_aufnr IS NOT INITIAL.
-    " We want aufnr, vornr, objnr and order by aplzl (operation sequence)
-    SELECT a~aufnr AS aufnr,
-           v~vornr  AS vornr,
-           v~objnr  AS objnr,
-           v~aplzl  AS aplzl
-      FROM afko AS a
-      INNER JOIN afvc AS v
-        ON a~aufpl = v~aufpl
-      INTO TABLE @gt_operations
-      WHERE a~aufnr IN @lt_aufnr
-      ORDER BY a~aufnr, v~aplzl.
-  ENDIF.
-
-  " Prefetch tj02t status texts (language = English 'E' used in original code)
-  CLEAR gt_tj02t.
-  SELECT istat, txt04
-    FROM tj02t
-    INTO TABLE @gt_tj02t
-    WHERE spras = 'E'.
-
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Process fetched orders (unique only)
-*---------------------------------------------------------------------*
-FORM f_process_orders.
-
-  DATA: lt_unique_orders TYPE TABLE OF viaufkst,
-        ls_unique        TYPE viaufkst,
-        lt_seen_orders   TYPE SORTED TABLE OF aufnr WITH UNIQUE KEY table_line.
-
-  CLEAR: lt_unique_orders, lt_seen_orders.
-
-  " Build unique list of orders
-  LOOP AT gt_orders INTO ls_unique.
-    READ TABLE lt_seen_orders WITH KEY table_line = ls_unique-aufnr TRANSPORTING NO FIELDS.
-    IF sy-subrc <> 0.
-      APPEND ls_unique TO lt_unique_orders.
-      INSERT ls_unique-aufnr INTO TABLE lt_seen_orders.
-    ENDIF.
-  ENDLOOP.
-
-  " Process each unique order only once
-  LOOP AT lt_unique_orders INTO ls_unique.
-    PERFORM f_check_status USING ls_unique.
-  ENDLOOP.
-
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Check status (no DB SELECTs inside the loop — use prefetched tables)
+* Check status (Optimized: no DB access inside loop)
 *---------------------------------------------------------------------*
 FORM f_check_status USING ps_order TYPE viaufkst.
 
@@ -237,34 +21,34 @@ FORM f_check_status USING ps_order TYPE viaufkst.
         lv_jcds_ts       TYPE char14,
         lv_cdhdr_ts      TYPE char14.
 
-  " Duplicate check at start (binary search assumes gt_output sorted by MaintenanceOrder)
+  " Avoid duplicate processing
   READ TABLE gt_output TRANSPORTING NO FIELDS
     WITH KEY MaintenanceOrder = ps_order-aufnr
     BINARY SEARCH.
   IF sy-subrc = 0.
-    RETURN.  " Already processed this order
+    RETURN.
   ENDIF.
 
-  " Determine lv_obj from prefetched INOB (equipment or func loc)
-  CLEAR lv_obj.
-  IF ps_order-equnr IS NOT INITIAL.
-    READ TABLE gt_inob INTO DATA(ls_inob) WITH KEY objek = ps_order-equnr BINARY SEARCH.
-  ENDIF.
+  " Classification link (from INOB)
+  READ TABLE gt_inob INTO DATA(ls_inob)
+    WITH KEY objek = ps_order-equnr BINARY SEARCH.
   IF sy-subrc <> 0 AND ps_order-tplnr IS NOT INITIAL.
-    READ TABLE gt_inob INTO ls_inob WITH KEY objek = ps_order-tplnr BINARY SEARCH.
+    READ TABLE gt_inob INTO ls_inob
+      WITH KEY objek = ps_order-tplnr BINARY SEARCH.
   ENDIF.
   IF sy-subrc <> 0.
-    RETURN. " No classification link, nothing to do
+    RETURN.
   ENDIF.
   lv_obj = ls_inob-cuobj.
 
-  " Check classification (prefetched ausp)
-  READ TABLE gt_ausp INTO DATA(ls_ausp) WITH KEY objek = lv_obj atinn = gv_atinn BINARY SEARCH.
+  " INTERFACE characteristic = CMX (from AUSP)
+  READ TABLE gt_ausp INTO DATA(ls_ausp)
+    WITH KEY objek = lv_obj atinn = gv_atinn BINARY SEARCH.
   IF sy-subrc <> 0 OR ls_ausp-atwrt <> 'CMX'.
     RETURN.
   ENDIF.
 
-  " Detect current active statuses using prefetched JEST
+  " Determine active statuses (from JEST)
   LOOP AT gt_jest ASSIGNING FIELD-SYMBOL(<ls_jest>)
        WHERE objnr = ps_order-objnr AND inact = ''.
     CASE <ls_jest>-stat.
@@ -275,79 +59,55 @@ FORM f_check_status USING ps_order TYPE viaufkst.
     ENDCASE.
   ENDLOOP.
 
-  " Check if order was previously locked (JCDS with inact marker 'X' — earlier code used jcds with inact = 'X')
-  READ TABLE gt_jcds INTO DATA(ls_jcds_prev)
-    WITH KEY objnr = ps_order-objnr stat = 'I0043'.
+  " Previously locked (from JCDS)
+  READ TABLE gt_jcds INTO DATA(ls_prev_lkd)
+    WITH KEY objnr = ps_order-objnr stat = 'I0043' inact = 'X' BINARY SEARCH.
   IF sy-subrc = 0.
-    " Not sufficient to check inact here because gt_jcds didn't include inact field; use presence as sign of previous lock
     lv_prev_locked = abap_true.
   ENDIF.
 
-  " Date-Time Range filtering: compute latest jcds timestamp and cdhdr timestamp from prefetched tables
+  " Date/time range filter (from JCDS & CDHDR)
   CONCATENATE so_date-low so_time-low INTO lv_input_ts.
   CONCATENATE sy-mandt '30' ps_order-aufnr INTO lv_objid.
 
-  " Compute latest jcds (status change) timestamp for statuses of interest
-  lv_jcds_ts = ''.
-  DATA(lv_max_jcds_date) = 0.
-  DATA(lv_max_jcds_time) = 0.
-  LOOP AT gt_jcds INTO DATA(ls_jcds)
-    WHERE objnr = ps_order-objnr.
-    " compare (udate, utime)
-    IF ls_jcds-udate > lv_max_jcds_date
-       OR ( ls_jcds-udate = lv_max_jcds_date AND ls_jcds-utime > lv_max_jcds_time ).
-      lv_max_jcds_date = ls_jcds-udate.
-      lv_max_jcds_time = ls_jcds-utime.
-    ENDIF.
-  ENDLOOP.
-  IF lv_max_jcds_date IS NOT INITIAL.
-    CONCATENATE lv_max_jcds_date lv_max_jcds_time INTO lv_jcds_ts.
+  READ TABLE gt_jcds INTO DATA(ls_jcds)
+    WITH KEY objnr = ps_order-objnr BINARY SEARCH.
+  IF sy-subrc = 0.
+    lv_sts_date = ls_jcds-udate.
+    lv_sts_time = ls_jcds-utime.
+    CONCATENATE lv_sts_date lv_sts_time INTO lv_jcds_ts.
   ENDIF.
 
-  " Compute latest cdhdr timestamp
-  lv_cdhdr_ts = ''.
-  DATA(lv_max_chg_date) = 0.
-  DATA(lv_max_chg_time) = 0.
-  LOOP AT gt_cdhdr INTO DATA(ls_cdhdr)
-    WHERE objectid = lv_objid.
-    IF ls_cdhdr-udate > lv_max_chg_date
-       OR ( ls_cdhdr-udate = lv_max_chg_date AND ls_cdhdr-utime > lv_max_chg_time ).
-      lv_max_chg_date = ls_cdhdr-udate.
-      lv_max_chg_time = ls_cdhdr-utime.
-    ENDIF.
-  ENDLOOP.
-  IF lv_max_chg_date IS NOT INITIAL.
-    CONCATENATE lv_max_chg_date lv_max_chg_time INTO lv_cdhdr_ts.
+  READ TABLE gt_cdhdr INTO DATA(ls_cdhdr)
+    WITH KEY objectid = lv_objid BINARY SEARCH.
+  IF sy-subrc = 0.
+    lv_chg_date = ls_cdhdr-udate.
+    lv_chg_time = ls_cdhdr-utime.
+    CONCATENATE lv_chg_date lv_chg_time INTO lv_cdhdr_ts.
   ENDIF.
 
   IF lv_jcds_ts IS INITIAL AND lv_cdhdr_ts IS INITIAL.
     RETURN.
   ENDIF.
 
-  " Get operation (from prefetched operations table)
-  CLEAR lv_vornr.
+  " Determine first operation
   PERFORM f_get_operation USING ps_order CHANGING lv_vornr.
 
-  "1. LOCKED with CMXS, skip BAPI and sent to cmx as LKD, without CMXS skip both BAPI and CMX
+  " Apply same decision logic (unchanged business rules)
   IF lv_locked_active = abap_true.
     lv_stat = 'I0043'.
-
     IF lv_cmxs_active = abap_true.
-      " Already sent before — must update CMX that it's now Locked
       PERFORM f_prepare_output USING ps_order lv_vornr lv_stat.
       gs_output-msg = 'Locked order with CMXS – send to CMX (skip BAPI)'.
       APPEND gs_output TO gt_output.
     ELSE.
-      " No CMXS, skip everything
       gs_output-msg = 'Locked order without CMXS – skip both BAPI and CMX'.
       PERFORM f_prepare_output USING ps_order lv_vornr lv_stat.
       APPEND gs_output TO gt_output.
     ENDIF.
-
     RETURN.
   ENDIF.
 
-  " 2. TECO → skip BAPI, send to CMX
   IF lv_teco_active = abap_true.
     lv_stat = 'I0045'.
     PERFORM f_prepare_output USING ps_order lv_vornr lv_stat.
@@ -357,18 +117,16 @@ FORM f_check_status USING ps_order TYPE viaufkst.
     RETURN.
   ENDIF.
 
-  " 3. REL → depends on unlock + CMXS
   IF lv_rel_active = abap_true.
     lv_stat = 'I0002'.
 
-    IF lv_prev_locked = abap_true. " recently unlocked
+    IF lv_prev_locked = abap_true.
       IF lv_cmxs_active = abap_true.
         gs_output-msg = 'Unlocked REL with CMXS – send to CMX only'.
       ELSE.
         gs_output-msg = 'Unlocked REL without CMXS – send to BAPI and CMX'.
       ENDIF.
-
-    ELSE. "normal REL
+    ELSE.
       IF lv_cmxs_active = abap_true.
         gs_output-msg = 'REL with CMXS – send to CMX only'.
       ELSE.
@@ -382,105 +140,3 @@ FORM f_check_status USING ps_order TYPE viaufkst.
   ENDIF.
 
 ENDFORM.
-
-*---------------------------------------------------------------------*
-* Get first operation (read-only from prefetched gt_operations)
-*---------------------------------------------------------------------*
-FORM f_get_operation USING ps_order TYPE viaufkst
-                     CHANGING pv_vornr TYPE afvc-vornr.
-
-  pv_vornr = ''.
-
-  IF gt_operations IS INITIAL.
-    " No prefetched operations available
-    RETURN.
-  ENDIF.
-
-  " Loop thru operations for the given aufnr (gt_operations ordered by aplzl)
-  LOOP AT gt_operations INTO DATA(ls_op)
-    WHERE aufnr = ps_order-aufnr.
-    " ls_op-objnr may exist or not; check its status via prefetched jest (deleted status I0013)
-    READ TABLE gt_jest INTO DATA(ls_jest) WITH KEY objnr = ls_op-objnr stat = 'I0013' TRANSPORTING NO FIELDS BINARY SEARCH.
-    " If JEST record with deleted status exists (sy-subrc = 0), it's deleted -> skip
-    IF sy-subrc <> 0.
-      pv_vornr = ls_op-vornr.
-      EXIT.
-    ENDIF.
-  ENDLOOP.
-
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Prepare output (no DB SELECTs inside - use prefetched data for status texts)
-*---------------------------------------------------------------------*
-FORM f_prepare_output USING ps_order TYPE viaufkst
-                       pv_vornr TYPE vornr
-                       pv_stat  TYPE jest-stat.
-
-  CLEAR gs_output.
-
-  gs_output-OrderMessageStatus        = 'CREATE'.
-  gs_output-Plant                     = ps_order-iwerk.
-  gs_output-MaintenanceOrder          = ps_order-aufnr.
-  gs_output-MaintenanceOrderOperation = pv_vornr.
-  gs_output-MaintOrdBasicStartDate    = ps_order-gstrp.
-  gs_output-MaintOrdBasicEndDate      = ps_order-gltrp.
-  gs_output-LatestAcceptableComplDate = ps_order-lacd_date.
-  gs_output-SystemId                  = sy-sysid.
-
-  " Determine TECO / CMX flags from prefetched JEST
-  DATA(lv_teco_active) = abap_false.
-  DATA(lv_cmx_active)  = abap_false.
-
-  READ TABLE gt_jest TRANSPORTING NO FIELDS
-    WITH KEY objnr = ps_order-objnr stat = 'I0045' inact = '' BINARY SEARCH.
-  IF sy-subrc = 0.
-    lv_teco_active = abap_true.
-  ENDIF.
-
-  READ TABLE gt_jest TRANSPORTING NO FIELDS
-    WITH KEY objnr = ps_order-objnr stat = 'E0010' inact = '' BINARY SEARCH.
-  IF sy-subrc = 0.
-    lv_cmx_active = abap_true.
-  ENDIF.
-
-  " Determine final display text using prefetched TJ02T
-  IF lv_teco_active = abap_true.
-    READ TABLE gt_tj02t INTO DATA(ls_tj02t) WITH KEY istat = 'I0045'.
-  ELSE.
-    READ TABLE gt_tj02t INTO ls_tj02t WITH KEY istat = pv_stat.
-  ENDIF.
-  IF sy-subrc = 0.
-    gs_output-SystemStatusText = ls_tj02t-txt04.
-  ELSE.
-    gs_output-SystemStatusText = pv_stat.
-  ENDIF.
-
-  " Technical object
-  IF ps_order-equnr IS NOT INITIAL.
-    gs_output-TechnicalObject = ps_order-equnr.
-  ELSE.
-    gs_output-TechnicalObject = ps_order-tplnr.
-  ENDIF.
-
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Update SAP status (BAPI calls). No changes to BAPI logic except no SELECTs.
-*---------------------------------------------------------------------*
-FORM f_send_cmx.
-
-  DATA lv_mode TYPE char10.
-
-  IF p_test = abap_true.
-    lv_mode = 'TEST'.
-  ELSE.
-    lv_mode = 'LIVE'.
-  ENDIF.
-
-  LOOP AT gt_output ASSIGNING FIELD-SYMBOL(<ls_output_row>).
-
-    " Skip Locked or TECO
-    IF <ls_output_row>-SystemStatusText = 'LKD'
-      OR <ls_output_row>-SystemStatusText = 'TECO'.
-      <ls_output_row>-msg = |
