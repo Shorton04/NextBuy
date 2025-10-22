@@ -1,142 +1,29 @@
 *---------------------------------------------------------------------*
-* Check status (Optimized: no DB access inside loop)
+* Get first operation (Optimized: use prefetched join)
 *---------------------------------------------------------------------*
-FORM f_check_status USING ps_order TYPE viaufkst.
+FORM f_get_operation USING ps_order TYPE viaufkst
+                     CHANGING pv_vornr TYPE afvc-vornr.
 
-  DATA: lv_obj           TYPE cuobj,
-        lv_value         TYPE atwrt,
-        lv_stat          TYPE jest-stat,
-        lv_vornr         TYPE vornr,
-        lv_objid         TYPE c LENGTH 20,
-        lv_rel_active    TYPE abap_bool VALUE abap_false,
-        lv_teco_active   TYPE abap_bool VALUE abap_false,
-        lv_locked_active TYPE abap_bool VALUE abap_false,
-        lv_cmxs_active   TYPE abap_bool VALUE abap_false,
-        lv_prev_locked   TYPE abap_bool VALUE abap_false,
-        lv_sts_date      TYPE udate,
-        lv_sts_time      TYPE utime,
-        lv_chg_date      TYPE udate,
-        lv_chg_time      TYPE utime,
-        lv_input_ts      TYPE char14,
-        lv_jcds_ts       TYPE char14,
-        lv_cdhdr_ts      TYPE char14.
+  DATA: ls_op TYPE ty_op.
 
-  " Avoid duplicate processing
-  READ TABLE gt_output TRANSPORTING NO FIELDS
-    WITH KEY MaintenanceOrder = ps_order-aufnr
-    BINARY SEARCH.
+  IF gt_operations IS INITIAL.
+    " Prefetch all operations for all orders
+    SELECT a~aufnr, v~vornr, v~objnr
+      FROM afko AS a
+      INNER JOIN afvc AS v ON a~aufpl = v~aufpl
+      FOR ALL ENTRIES IN @gt_orders
+      WHERE a~aufnr = @gt_orders-aufnr
+      INTO TABLE @gt_operations.
+
+    SORT gt_operations BY aufnr.
+  ENDIF.
+
+  READ TABLE gt_operations INTO ls_op
+    WITH KEY aufnr = ps_order-aufnr BINARY SEARCH.
   IF sy-subrc = 0.
-    RETURN.
-  ENDIF.
-
-  " Classification link (from INOB)
-  READ TABLE gt_inob INTO DATA(ls_inob)
-    WITH KEY objek = ps_order-equnr BINARY SEARCH.
-  IF sy-subrc <> 0 AND ps_order-tplnr IS NOT INITIAL.
-    READ TABLE gt_inob INTO ls_inob
-      WITH KEY objek = ps_order-tplnr BINARY SEARCH.
-  ENDIF.
-  IF sy-subrc <> 0.
-    RETURN.
-  ENDIF.
-  lv_obj = ls_inob-cuobj.
-
-  " INTERFACE characteristic = CMX (from AUSP)
-  READ TABLE gt_ausp INTO DATA(ls_ausp)
-    WITH KEY objek = lv_obj atinn = gv_atinn BINARY SEARCH.
-  IF sy-subrc <> 0 OR ls_ausp-atwrt <> 'CMX'.
-    RETURN.
-  ENDIF.
-
-  " Determine active statuses (from JEST)
-  LOOP AT gt_jest ASSIGNING FIELD-SYMBOL(<ls_jest>)
-       WHERE objnr = ps_order-objnr AND inact = ''.
-    CASE <ls_jest>-stat.
-      WHEN 'I0002'. lv_rel_active    = abap_true.
-      WHEN 'I0045'. lv_teco_active   = abap_true.
-      WHEN 'I0043'. lv_locked_active = abap_true.
-      WHEN 'E0010'. lv_cmxs_active   = abap_true.
-    ENDCASE.
-  ENDLOOP.
-
-  " Previously locked (from JCDS)
-  READ TABLE gt_jcds INTO DATA(ls_prev_lkd)
-    WITH KEY objnr = ps_order-objnr stat = 'I0043' inact = 'X' BINARY SEARCH.
-  IF sy-subrc = 0.
-    lv_prev_locked = abap_true.
-  ENDIF.
-
-  " Date/time range filter (from JCDS & CDHDR)
-  CONCATENATE so_date-low so_time-low INTO lv_input_ts.
-  CONCATENATE sy-mandt '30' ps_order-aufnr INTO lv_objid.
-
-  READ TABLE gt_jcds INTO DATA(ls_jcds)
-    WITH KEY objnr = ps_order-objnr BINARY SEARCH.
-  IF sy-subrc = 0.
-    lv_sts_date = ls_jcds-udate.
-    lv_sts_time = ls_jcds-utime.
-    CONCATENATE lv_sts_date lv_sts_time INTO lv_jcds_ts.
-  ENDIF.
-
-  READ TABLE gt_cdhdr INTO DATA(ls_cdhdr)
-    WITH KEY objectid = lv_objid BINARY SEARCH.
-  IF sy-subrc = 0.
-    lv_chg_date = ls_cdhdr-udate.
-    lv_chg_time = ls_cdhdr-utime.
-    CONCATENATE lv_chg_date lv_chg_time INTO lv_cdhdr_ts.
-  ENDIF.
-
-  IF lv_jcds_ts IS INITIAL AND lv_cdhdr_ts IS INITIAL.
-    RETURN.
-  ENDIF.
-
-  " Determine first operation
-  PERFORM f_get_operation USING ps_order CHANGING lv_vornr.
-
-  " Apply same decision logic (unchanged business rules)
-  IF lv_locked_active = abap_true.
-    lv_stat = 'I0043'.
-    IF lv_cmxs_active = abap_true.
-      PERFORM f_prepare_output USING ps_order lv_vornr lv_stat.
-      gs_output-msg = 'Locked order with CMXS – send to CMX (skip BAPI)'.
-      APPEND gs_output TO gt_output.
-    ELSE.
-      gs_output-msg = 'Locked order without CMXS – skip both BAPI and CMX'.
-      PERFORM f_prepare_output USING ps_order lv_vornr lv_stat.
-      APPEND gs_output TO gt_output.
-    ENDIF.
-    RETURN.
-  ENDIF.
-
-  IF lv_teco_active = abap_true.
-    lv_stat = 'I0045'.
-    PERFORM f_prepare_output USING ps_order lv_vornr lv_stat.
-    gs_output-msg = 'TECO – send to CMX only (skip BAPI)'.
-    APPEND gs_output TO gt_output.
-    SORT gt_output BY MaintenanceOrder.
-    RETURN.
-  ENDIF.
-
-  IF lv_rel_active = abap_true.
-    lv_stat = 'I0002'.
-
-    IF lv_prev_locked = abap_true.
-      IF lv_cmxs_active = abap_true.
-        gs_output-msg = 'Unlocked REL with CMXS – send to CMX only'.
-      ELSE.
-        gs_output-msg = 'Unlocked REL without CMXS – send to BAPI and CMX'.
-      ENDIF.
-    ELSE.
-      IF lv_cmxs_active = abap_true.
-        gs_output-msg = 'REL with CMXS – send to CMX only'.
-      ELSE.
-        gs_output-msg = 'REL – send to BAPI and CMX'.
-      ENDIF.
-    ENDIF.
-
-    PERFORM f_prepare_output USING ps_order lv_vornr lv_stat.
-    APPEND gs_output TO gt_output.
-    SORT gt_output BY MaintenanceOrder.
+    pv_vornr = ls_op-vornr.
+  ELSE.
+    pv_vornr = ''.
   ENDIF.
 
 ENDFORM.
