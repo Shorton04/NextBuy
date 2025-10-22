@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_F01
+*& Include ZTR_A2R_KCMP_STATUS_F01 (Optimized for S/4HANA)
 *&---------------------------------------------------------------------*
 
 *---------------------------------------------------------------------*
@@ -11,31 +11,25 @@ FORM init_defaults.
 ENDFORM.
 
 *---------------------------------------------------------------------*
-* FORM: get_kcmp_status (safe & language-dependent)
+* FORM: get_kcmp_status
 *---------------------------------------------------------------------*
 FORM get_kcmp_status.
   DATA: lv_stsma TYPE jsto-stsma,
         lv_aufnr TYPE aufk-aufnr,
         lv_objnr TYPE jest-objnr.
 
-  " --- Read first order number from selection
   READ TABLE s_aufnr INDEX 1 INTO DATA(ls_range).
   IF sy-subrc <> 0 OR ls_range-low IS INITIAL.
     MESSAGE 'Please enter at least one Order Number.' TYPE 'E'.
   ENDIF.
 
-  " --- Convert order number to internal format
   lv_aufnr = ls_range-low.
   CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
-    EXPORTING
-      input  = lv_aufnr
-    IMPORTING
-      output = lv_aufnr.
+    EXPORTING input = lv_aufnr
+    IMPORTING output = lv_aufnr.
 
-  " --- Build OBJNR = 'OR' + padded order number
   CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
 
-  " --- Read status profile (STSMA) from JSTO
   SELECT SINGLE stsma
     INTO @lv_stsma
     FROM jsto
@@ -45,13 +39,12 @@ FORM get_kcmp_status.
     MESSAGE |Cannot determine status profile for order { lv_aufnr }.| TYPE 'E'.
   ENDIF.
 
-  " --- Get KCMP internal status code (language dependent)
   SELECT SINGLE j~estat
     INTO @gc_estat
     FROM tj30 AS j
-      INNER JOIN tj30t AS t
-        ON j~estat = t~estat
-       AND j~stsma = t~stsma
+    INNER JOIN tj30t AS t
+      ON j~estat = t~estat
+     AND j~stsma = t~stsma
    WHERE j~stsma = @lv_stsma
      AND t~txt04 = 'KCMP'
      AND t~spras = @sy-langu.
@@ -59,7 +52,6 @@ FORM get_kcmp_status.
   IF sy-subrc <> 0.
     MESSAGE |KCMP user status not found for profile { lv_stsma } and language { sy-langu }.| TYPE 'E'.
   ENDIF.
-
 ENDFORM.
 
 *---------------------------------------------------------------------*
@@ -101,36 +93,52 @@ ENDFORM.
 * FORM: filter_by_jest
 *---------------------------------------------------------------------*
 FORM filter_by_jest.
-  DATA lt_keep TYPE STANDARD TABLE OF lty_order.
+  DATA: lt_objnrs       TYPE TABLE OF jest-objnr,
+        lt_jest_all     TYPE TABLE OF jest,
+        lt_keep         TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY.
 
   LOOP AT gt_orders INTO DATA(ls_ord).
-    SELECT stat
-      FROM jest
-      WHERE objnr = @ls_ord-objnr
-        AND inact = @space
-      INTO TABLE @DATA(lt_jest).
+    APPEND ls_ord-objnr TO lt_objnrs.
+  ENDLOOP.
 
-    IF lt_jest IS INITIAL.
-      CONTINUE.
-    ENDIF.
+  IF lt_objnrs IS INITIAL.
+    gt_orders = VALUE #( ).
+    EXIT.
+  ENDIF.
 
+  SELECT objnr, stat
+    FROM jest
+    WHERE objnr IN @lt_objnrs
+      AND inact = @space
+    INTO TABLE @lt_jest_all.
+
+  LOOP AT gt_orders INTO DATA(ls_ord2).
     DATA(lv_include) = abap_true.
+    DATA(lv_has_included) = abap_false.
 
-    " Exclude statuses in S_STATEX
-    LOOP AT lt_jest INTO DATA(ls_stat).
-      READ TABLE s_statex WITH KEY low = ls_stat-stat TRANSPORTING NO FIELDS.
+    LOOP AT lt_jest_all INTO DATA(ls_jst) WHERE objnr = ls_ord2-objnr.
+      " --- Exclude statuses
+      READ TABLE s_statex WITH KEY low = ls_jst-stat TRANSPORTING NO FIELDS.
       IF sy-subrc = 0.
         lv_include = abap_false.
         EXIT.
       ENDIF.
     ENDLOOP.
 
-    IF lv_include = abap_true.
-      " Must have one of the included statuses
-      LOOP AT lt_jest INTO ls_stat WHERE stat IN s_statin.
-        APPEND ls_ord TO lt_keep.
+    IF lv_include = abap_false.
+      CONTINUE.
+    ENDIF.
+
+    LOOP AT lt_jest_all INTO ls_jst WHERE objnr = ls_ord2-objnr.
+      READ TABLE s_statin WITH KEY low = ls_jst-stat TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        lv_has_included = abap_true.
         EXIT.
-      ENDLOOP.
+      ENDIF.
+    ENDLOOP.
+
+    IF lv_has_included = abap_true.
+      APPEND ls_ord2 TO lt_keep.
     ENDIF.
   ENDLOOP.
 
@@ -141,15 +149,22 @@ ENDFORM.
 * FORM: filter_has_components
 *---------------------------------------------------------------------*
 FORM filter_has_components.
-  DATA lt_keep TYPE STANDARD TABLE OF lty_order.
+  DATA: lt_resb_exist TYPE TABLE OF resb-aufnr,
+        lt_keep       TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY.
+
+  SELECT DISTINCT aufnr
+    FROM resb
+    WHERE aufnr IN @gt_orders[ aufnr ]
+      AND xloek = @space
+    INTO TABLE @lt_resb_exist.
+
+  DATA(ht_resb_exist) = VALUE HASHED TABLE OF resb-aufnr
+                          WITH UNIQUE KEY table_line
+                          ( FOR wa IN lt_resb_exist ( wa ) ).
 
   LOOP AT gt_orders INTO DATA(ls_ord).
-    SELECT COUNT(*)
-      FROM resb
-      WHERE aufnr = @ls_ord-aufnr
-        AND xloek = @space.
-        "AND kzear = @space.
-    IF sy-dbcnt > 0.
+    READ TABLE ht_resb_exist WITH KEY table_line = ls_ord-aufnr TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
       APPEND ls_ord TO lt_keep.
     ENDIF.
   ENDLOOP.
@@ -161,34 +176,53 @@ ENDFORM.
 * FORM: evaluate_kitting
 *---------------------------------------------------------------------*
 FORM evaluate_kitting.
-  DATA: lt_resb         TYPE TABLE OF resb,
-        lv_all_complete TYPE abap_bool.
+  TYPES: BEGIN OF ty_resb_sum,
+           aufnr         TYPE resb-aufnr,
+           total_req     TYPE resb-bdmng,
+           total_issued  TYPE resb-enmng,
+         END OF ty_resb_sum.
+
+  DATA: lt_resb_summary TYPE STANDARD TABLE OF ty_resb_sum,
+        lt_log_local    TYPE STANDARD TABLE OF lty_log WITH EMPTY KEY.
+
+  SELECT aufnr,
+         SUM( bdmng ) AS total_req,
+         SUM( enmng ) AS total_issued
+    FROM resb
+    WHERE aufnr IN @gt_orders[ aufnr ]
+      AND xloek = @space
+    GROUP BY aufnr
+    INTO TABLE @lt_resb_summary.
+
+  DATA(ht_resb_summary) = VALUE HASHED TABLE OF ty_resb_sum
+                            WITH UNIQUE KEY aufnr
+                            ( FOR wa IN lt_resb_summary ( wa ) ).
 
   LOOP AT gt_orders INTO DATA(ls_ord).
-    CLEAR: lt_resb, lv_all_complete.
-    lv_all_complete = abap_true.
+    READ TABLE ht_resb_summary INTO DATA(ls_sum) WITH KEY aufnr = ls_ord-aufnr.
+    DATA(lv_complete) = abap_false.
 
-    SELECT * FROM resb
-      WHERE aufnr = @ls_ord-aufnr
-        AND xloek = @space
-        "AND kzear = @space
-      INTO TABLE @lt_resb.
+    IF sy-subrc = 0 AND ls_sum-total_req IS NOT INITIAL
+       AND ls_sum-total_issued >= ls_sum-total_req.
+      lv_complete = abap_true.
+    ENDIF.
 
-    LOOP AT lt_resb INTO DATA(ls_resb).
-      IF ls_resb-enmng < ls_resb-bdmng.
-        lv_all_complete = abap_false.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
-
-    IF lv_all_complete = abap_true.
-      APPEND VALUE #( aufnr = ls_ord-aufnr auart = ls_ord-auart
-                      iwerk = ls_ord-iwerk msgtxt = 'Ready to set KCMP' light = 'Y' ) TO gt_log.
+    IF lv_complete = abap_true.
+      APPEND VALUE #( aufnr = ls_ord-aufnr
+                      auart = ls_ord-auart
+                      iwerk = ls_ord-iwerk
+                      msgtxt = 'Ready to set KCMP'
+                      light  = 'Y' ) TO lt_log_local.
     ELSE.
-      APPEND VALUE #( aufnr = ls_ord-aufnr auart = ls_ord-auart
-                      iwerk = ls_ord-iwerk msgtxt = 'Incomplete components' light = 'R' ) TO gt_log.
+      APPEND VALUE #( aufnr = ls_ord-aufnr
+                      auart = ls_ord-auart
+                      iwerk = ls_ord-iwerk
+                      msgtxt = 'Incomplete components'
+                      light  = 'R' ) TO lt_log_local.
     ENDIF.
   ENDLOOP.
+
+  gt_log = lt_log_local.
 ENDFORM.
 
 *---------------------------------------------------------------------*
@@ -202,74 +236,77 @@ FORM check_authorizations.
 ENDFORM.
 
 *---------------------------------------------------------------------*
-* FORM: update_user_status
+* FORM: update_user_status (Batch BAPI call)
 *---------------------------------------------------------------------*
 FORM update_user_status.
+  DATA: lt_header_all  TYPE TABLE OF bapi_alm_order_headers_i,
+        lt_status_all  TYPE TABLE OF bapi_alm_order_usrstat,
+        lt_methods_all TYPE TABLE OF bapi_alm_order_method,
+        lt_return      TYPE TABLE OF bapiret2,
+        ls_return      TYPE bapiret2,
+        lt_to_process  TYPE TABLE OF lty_log,
+        lv_action      TYPE string VALUE ( COND #( WHEN p_reset = abap_true THEN 'RESET' ELSE 'SET' ) ).
 
   LOOP AT gt_log INTO DATA(ls_log) WHERE light = 'Y'.
-
-    DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
-          lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
-          lt_methods TYPE TABLE OF bapi_alm_order_method,
-          lt_return  TYPE TABLE OF bapiret2,
-          ls_return  TYPE bapiret2,
-          lv_action  TYPE string.
-
-    " Determine action mode
-    IF p_reset = abap_true.
-      lv_action = 'RESET'.
-    ELSE.
-      lv_action = 'SET'.
-    ENDIF.
-
-    APPEND VALUE #( orderid = ls_log-aufnr ) TO lt_header.
-
-    " Set or Reset KCMP status
-    IF lv_action = 'SET'.
-      APPEND VALUE #( user_st_text = 'KCMP' langu = p_spras ) TO lt_status.
-    ELSE.
-      " RESET mode: deactivate KCMP (INACT = 'X')
-      APPEND VALUE #( user_st_text = 'KCMP' inactive = abap_true langu = p_spras ) TO lt_status.
-    ENDIF.
-
-    " BAPI methods for change
-    APPEND VALUE #( refnumber = '00001' objecttype = 'HEADER'
-                    method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
-    APPEND VALUE #( refnumber = '00001' objecttype = 'USERSTATUS'
-                    method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
-    APPEND VALUE #( refnumber = '00003' objecttype = 'ORDER'
-                    method = 'SAVE' objectkey = ls_log-aufnr ) TO lt_methods.
-
-    " Execute status change
-    CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
-      TABLES
-        it_header     = lt_header
-        it_methods    = lt_methods
-        it_userstatus = lt_status
-        return        = lt_return.
-
-    READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
-    IF sy-subrc = 0.
-      ls_log-msgtxt = ls_return-message(72).
-      ls_log-light  = 'R'.
-      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-    ELSE.
-      IF lv_action = 'SET'.
-        ls_log-msgtxt = |KCMP set successfully ({ gc_estat })|.
-      ELSE.
-        ls_log-msgtxt = |KCMP reset successfully ({ gc_estat })|.
-      ENDIF.
-      ls_log-light  = 'G'.
-      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
-    ENDIF.
-
-    PERFORM release_locks USING ls_log-aufnr.
-    MODIFY gt_log FROM ls_log.
-
+    APPEND ls_log TO lt_to_process.
   ENDLOOP.
 
-  COMMIT WORK.
+  IF lt_to_process IS INITIAL.
+    EXIT.
+  ENDIF.
 
+  DATA(lv_refnum) = 1.
+
+  LOOP AT lt_to_process INTO DATA(ls_proc).
+    APPEND VALUE #( orderid = ls_proc-aufnr ) TO lt_header_all.
+
+    IF lv_action = 'SET'.
+      APPEND VALUE #( orderid = ls_proc-aufnr user_st_text = 'KCMP' langu = p_spras ) TO lt_status_all.
+    ELSE.
+      APPEND VALUE #( orderid = ls_proc-aufnr user_st_text = 'KCMP' inactive = 'X' langu = p_spras ) TO lt_status_all.
+    ENDIF.
+
+    DATA(lv_ref) = |{ lv_refnum ALPHA = IN }|.
+    APPEND VALUE #( refnumber = lv_ref objecttype = 'HEADER'  method = 'CHANGE' objectkey = ls_proc-aufnr ) TO lt_methods_all.
+    APPEND VALUE #( refnumber = lv_ref objecttype = 'USERSTATUS' method = 'CHANGE' objectkey = ls_proc-aufnr ) TO lt_methods_all.
+    APPEND VALUE #( refnumber = lv_ref objecttype = 'ORDER' method = 'SAVE' objectkey = ls_proc-aufnr ) TO lt_methods_all.
+
+    lv_refnum = lv_refnum + 1.
+  ENDLOOP.
+
+  CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
+    TABLES
+      it_header     = lt_header_all
+      it_methods    = lt_methods_all
+      it_userstatus = lt_status_all
+      return        = lt_return.
+
+  READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
+  IF sy-subrc = 0.
+    LOOP AT gt_log INTO DATA(ls_fail) WHERE light = 'Y'.
+      ls_fail-msgtxt = ls_return-message(72).
+      ls_fail-light  = 'R'.
+      MODIFY gt_log FROM ls_fail TRANSPORTING msgtxt light WHERE aufnr = ls_fail-aufnr.
+    ENDLOOP.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    RETURN.
+  ENDIF.
+
+  LOOP AT gt_log INTO DATA(ls_succ) WHERE light = 'Y'.
+    IF lv_action = 'SET'.
+      ls_succ-msgtxt = |KCMP set successfully ({ gc_estat })|.
+    ELSE.
+      ls_succ-msgtxt = |KCMP reset successfully ({ gc_estat })|.
+    ENDIF.
+    ls_succ-light = 'G'.
+    MODIFY gt_log FROM ls_succ TRANSPORTING msgtxt light WHERE aufnr = ls_succ-aufnr.
+  ENDLOOP.
+
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+
+  LOOP AT lt_to_process INTO DATA(ls_rel).
+    PERFORM release_locks USING ls_rel-aufnr.
+  ENDLOOP.
 ENDFORM.
 
 *---------------------------------------------------------------------*
@@ -291,97 +328,47 @@ FORM display_execution_log.
   ENDIF.
 
   TRY.
-      "--------------------------------------------------------------*
-      " Create ALV for the internal table GT_LOG
-      "--------------------------------------------------------------*
       CALL METHOD cl_salv_table=>factory
         IMPORTING
           r_salv_table = lo_alv
         CHANGING
           t_table      = gt_log.
 
-      "--------------------------------------------------------------*
-      " Enable ALV standard functions (export, sort, filter, etc.)
-      "--------------------------------------------------------------*
       lo_func = lo_alv->get_functions( ).
-      CALL METHOD lo_func->set_all
-        EXPORTING
-          value = abap_true.
+      lo_func->set_all( abap_true ).
 
-      "--------------------------------------------------------------*
-      " Set column headers and descriptions
-      "--------------------------------------------------------------*
       lo_cols = lo_alv->get_columns( ).
 
-      " Order number
-      CALL METHOD lo_cols->get_column
-        EXPORTING
-          columnname = 'AUFNR'
-        RECEIVING
-          value      = lo_col.
-      CALL METHOD lo_col->set_short_text EXPORTING value = 'Order'.
-      CALL METHOD lo_col->set_medium_text EXPORTING value = 'Order Number'.
-      CALL METHOD lo_col->set_long_text EXPORTING value = 'Maintenance Order Number'.
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'AUFNR' RECEIVING value = lo_col.
+      lo_col->set_short_text( 'Order' ).
+      lo_col->set_medium_text( 'Order Number' ).
+      lo_col->set_long_text( 'Maintenance Order Number' ).
 
-      " Order type
-      CALL METHOD lo_cols->get_column
-        EXPORTING
-          columnname = 'AUART'
-        RECEIVING
-          value      = lo_col.
-      CALL METHOD lo_col->set_short_text EXPORTING value = 'Type'.
-      CALL METHOD lo_col->set_medium_text EXPORTING value = 'Order Type'.
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'AUART' RECEIVING value = lo_col.
+      lo_col->set_medium_text( 'Order Type' ).
 
-      " Plant
-      CALL METHOD lo_cols->get_column
-        EXPORTING
-          columnname = 'IWERK'
-        RECEIVING
-          value      = lo_col.
-      CALL METHOD lo_col->set_short_text EXPORTING value = 'Plant'.
-      CALL METHOD lo_col->set_medium_text EXPORTING value = 'Maint. Plant'.
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'IWERK' RECEIVING value = lo_col.
+      lo_col->set_medium_text( 'Plant' ).
 
-      " Message text
-      CALL METHOD lo_cols->get_column
-        EXPORTING
-          columnname = 'MSGTXT'
-        RECEIVING
-          value      = lo_col.
-      CALL METHOD lo_col->set_short_text EXPORTING value = 'Status'.
-      CALL METHOD lo_col->set_medium_text EXPORTING value = 'Component Check'.
-      CALL METHOD lo_col->set_long_text EXPORTING value = 'Component Status Message'.
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'MSGTXT' RECEIVING value = lo_col.
+      lo_col->set_medium_text( 'Component Check' ).
 
-      " Result light
-      CALL METHOD lo_cols->get_column
-        EXPORTING
-          columnname = 'LIGHT'
-        RECEIVING
-          value      = lo_col.
-      CALL METHOD lo_col->set_short_text EXPORTING value = 'R'.
-      CALL METHOD lo_col->set_medium_text EXPORTING value = 'Result'.
-      CALL METHOD lo_col->set_long_text EXPORTING value = 'Processing Result'.
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'LIGHT' RECEIVING value = lo_col.
+      lo_col->set_medium_text( 'Result' ).
 
-      "--------------------------------------------------------------*
-      " Display ALV
-      "--------------------------------------------------------------*
-      CALL METHOD lo_alv->display( ).
+      lo_alv->display( ).
 
-      "--------------------------------------------------------------*
-      " Handle column-not-found or general SALV errors gracefully
-      "--------------------------------------------------------------*
     CATCH cx_salv_not_found INTO lx_nf.
       MESSAGE lx_nf->get_text( ) TYPE 'I'.
-
     CATCH cx_salv_msg INTO lx_msg.
       LOOP AT gt_log INTO ls_log.
         WRITE: / ls_log-aufnr, ls_log-iwerk, ls_log-msgtxt.
       ENDLOOP.
   ENDTRY.
-
 ENDFORM.
 
 *---------------------------------------------------------------------*
-* FORM release_locks
+* FORM: release_locks (same as original)
 *---------------------------------------------------------------------*
 FORM release_locks USING p_aufnr TYPE aufk-aufnr.
 
@@ -397,52 +384,29 @@ FORM release_locks USING p_aufnr TYPE aufk-aufnr.
         lv_qmnum    TYPE qmel-qmnum,
         lv_objnr    TYPE jest-objnr.
 
-  " --- Normalize order number
   CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
-    EXPORTING
-      input  = p_aufnr
-    IMPORTING
-      output = lv_aufnr.
+    EXPORTING input = p_aufnr
+    IMPORTING output = lv_aufnr.
 
-  " --- Related data (for optional unlocks)
-  SELECT SINGLE rsnum
-    INTO @lv_rsnum
-    FROM resb
-    WHERE aufnr = @lv_aufnr
-      AND xloek = @space.
-      "AND kzear = @space.
+  SELECT SINGLE rsnum INTO @lv_rsnum
+    FROM resb WHERE aufnr = @lv_aufnr AND xloek = @space.
 
-  SELECT SINGLE prueflos
-    INTO @lv_prueflos
-    FROM qals
-    WHERE aufnr = @lv_aufnr.
+  SELECT SINGLE prueflos INTO @lv_prueflos
+    FROM qals WHERE aufnr = @lv_aufnr.
 
-  SELECT SINGLE qmnum
-    INTO @lv_qmnum
-    FROM qmel
-    WHERE aufnr = @lv_aufnr.
+  SELECT SINGLE qmnum INTO @lv_qmnum
+    FROM qmel WHERE aufnr = @lv_aufnr.
 
   CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
 
-  " --- Build list of possible DEQUEUE FMs
   lt_fms = VALUE #(
-    ( 'DEQUEUE_EAUFK' )   " Order header
-    ( 'DEQUEUE_EAFKO' )   " Order master data
-    ( 'DEQUEUE_EAFVC' )   " Operations
-    ( 'DEQUEUE_EEQUI' )   " Equipment
-    ( 'DEQUEUE_EIFLOT' )  " Functional Location
-    ( 'DEQUEUE_ERESB' )   " Reservation
-    ( 'DEQUEUE_ERKPF' )   " Reservation Header
-    ( 'DEQUEUE_EQALS' )   " Inspection lot
-    ( 'DEQUEUE_EQMEL' )   " Notification
+    ( 'DEQUEUE_EAUFK' ) ( 'DEQUEUE_EAFKO' ) ( 'DEQUEUE_EAFVC' )
+    ( 'DEQUEUE_EEQUI' ) ( 'DEQUEUE_EIFLOT' ) ( 'DEQUEUE_ERESB' )
+    ( 'DEQUEUE_ERKPF' ) ( 'DEQUEUE_EQALS' ) ( 'DEQUEUE_EQMEL' )
   ).
 
   LOOP AT lt_fms INTO lv_fm.
-
-    " --- Skip if FM does not exist in system
-    SELECT SINGLE funcname INTO lv_exists
-      FROM tfdir
-      WHERE funcname = lv_fm.
+    SELECT SINGLE funcname INTO lv_exists FROM tfdir WHERE funcname = lv_fm.
     IF sy-subrc <> 0.
       CONTINUE.
     ENDIF.
@@ -451,36 +415,28 @@ FORM release_locks USING p_aufnr TYPE aufk-aufnr.
         CASE lv_fm.
           WHEN 'DEQUEUE_EAUFK' OR 'DEQUEUE_EAFKO'.
             CALL FUNCTION lv_fm EXPORTING aufnr = lv_aufnr.
-
           WHEN 'DEQUEUE_EAFVC'.
             CALL FUNCTION lv_fm EXPORTING objnr = lv_objnr.
-
           WHEN 'DEQUEUE_ERESB' OR 'DEQUEUE_ERKPF'.
             IF lv_rsnum IS NOT INITIAL.
               CALL FUNCTION lv_fm EXPORTING rsnum = lv_rsnum.
             ENDIF.
-
           WHEN 'DEQUEUE_EQALS'.
             IF lv_prueflos IS NOT INITIAL.
               CALL FUNCTION lv_fm EXPORTING prueflos = lv_prueflos.
             ENDIF.
-
           WHEN 'DEQUEUE_EQMEL'.
             IF lv_qmnum IS NOT INITIAL.
               CALL FUNCTION lv_fm EXPORTING qmnum = lv_qmnum.
             ENDIF.
         ENDCASE.
-
       CATCH cx_root INTO DATA(lx_root).
         CONTINUE.
     ENDTRY.
-
   ENDLOOP.
 
-  " --- Final safety unlock (clears anything remaining in session)
   CALL FUNCTION 'DEQUEUE_ALL'.
 
   CONCATENATE 'Locks released for order' lv_aufnr INTO lv_msg SEPARATED BY space.
   WRITE: / lv_msg.
-
 ENDFORM.
