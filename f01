@@ -2,76 +2,69 @@ FUNCTION zlonza_alv_popup_table.
 *"----------------------------------------------------------------------
 *"*"Local Interface:
 *"  IMPORTING
-*"     REFERENCE(iv_start_col) TYPE  i DEFAULT 25
-*"     REFERENCE(iv_start_line) TYPE  i DEFAULT 6
-*"     REFERENCE(iv_end_col)   TYPE  i DEFAULT 120
-*"     REFERENCE(iv_end_line)  TYPE  i DEFAULT 25
-*"     REFERENCE(iv_title)     TYPE  c DEFAULT 'ALV Display'
+*"     REFERENCE(IV_START_COL) TYPE  I DEFAULT 25
+*"     REFERENCE(IV_START_LINE) TYPE  I DEFAULT 6
+*"     REFERENCE(IV_END_COL) TYPE  I DEFAULT 100
+*"     REFERENCE(IV_END_LINE) TYPE  I DEFAULT 10
+*"     REFERENCE(IV_TITLE) TYPE  STRING DEFAULT 'ALV'
+*"     REFERENCE(IT_FIELD_NAMES) TYPE  STANDARD TABLE OPTIONAL
 *"  EXPORTING
-*"     REFERENCE(ev_choice)    TYPE  flag
+*"     REFERENCE(EV_CHOICE) TYPE  FLAG
 *"  CHANGING
-*"     REFERENCE(it_table)     TYPE  STANDARD TABLE
+*"     REFERENCE(IT_TABLE) TYPE  STANDARD TABLE OPTIONAL
 *"----------------------------------------------------------------------
 
-  DATA: lo_container TYPE REF TO cl_gui_dialogbox_container,
-        lo_salv      TYPE REF TO cl_salv_table,
-        lv_answer    TYPE c,
-        lv_caption   TYPE c LENGTH 80.
+  DATA: lo_popup  TYPE REF TO cl_reca_gui_f4_popup,
+        lt_names  TYPE STANDARD TABLE OF zzs_alv_popup_names,
+        ls_names  TYPE zzs_alv_popup_names,
+        lv_choice TYPE flag,
+        lt_result TYPE REF TO data.  " temp result holder
 
-  " Convert caption to compatible C type
-  lv_caption = CONV c LENGTH 80( iv_title ).
+  FIELD-SYMBOLS: <lt_result> TYPE STANDARD TABLE.
 
-  " Create container popup window
-  CREATE OBJECT lo_container
-    EXPORTING
-      caption = lv_caption
-      top     = iv_start_line
-      left    = iv_start_col
-      width   = iv_end_col
-      height  = iv_end_line.
-
-  TRY.
-      " Create SALV table
-      cl_salv_table=>factory(
-        EXPORTING
-          r_container = lo_container
-        IMPORTING
-          r_salv_table = lo_salv
-        CHANGING
-          t_table = it_table ).
-
-      " Enable ALV features
-      lo_salv->get_functions( )->set_all( abap_true ).
-      lo_salv->get_display_settings( )->set_list_header( lv_caption ).
-      lo_salv->get_display_settings( )->set_striped_pattern( abap_true ).
-      lo_salv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>row_column ).
-
-      lo_salv->display( ).
-
-      " Confirmation popup after viewing
-      CALL FUNCTION 'POPUP_TO_CONFIRM'
-        EXPORTING
-          titlebar      = lv_caption
-          text_question = 'Do you want to continue?'
-          text_button_1 = 'Yes'
-          text_button_2 = 'No'
-          default_button = '1'
-        IMPORTING
-          answer = lv_answer.
-
-      IF lv_answer = '1'.
-        ev_choice = abap_true.
-      ELSE.
-        ev_choice = abap_false.
-      ENDIF.
-
-    CATCH cx_salv_msg INTO DATA(lx_msg).
-      MESSAGE lx_msg->get_text( ) TYPE 'E'.
-  ENDTRY.
-
-  " Clean up
-  IF lo_container IS BOUND.
-    lo_container->free( ).
+  " Safety check: table must not be initial
+  IF it_table IS INITIAL.
+    RETURN.
   ENDIF.
+
+  " Create popup
+  CALL METHOD cl_reca_gui_f4_popup=>factory_grid
+    EXPORTING
+      it_f4value     = it_table
+      if_multi       = abap_false
+      id_title       = iv_title
+    RECEIVING
+      ro_f4_instance = lo_popup.
+
+  CHECK lo_popup IS BOUND.
+
+  " Map field names to popup fields
+  MOVE-CORRESPONDING it_field_names TO lt_names.
+
+  LOOP AT lt_names INTO ls_names.
+    CALL METHOD lo_popup->set_field_text
+      EXPORTING
+        id_fieldname = ls_names-fieldname
+        id_text      = ls_names-heading.
+  ENDLOOP.
+
+  " Prepare temporary result table
+  CREATE DATA lt_result LIKE it_table.
+  ASSIGN lt_result->* TO <lt_result>.
+
+  " Display popup
+  CALL METHOD lo_popup->display
+    EXPORTING
+      id_start_column = iv_start_col
+      id_start_line   = iv_start_line
+      id_end_column   = iv_end_col
+      id_end_line     = iv_end_line
+    IMPORTING
+      et_result       = <lt_result>
+      ef_cancelled    = lv_choice.
+
+  " Assign result back to changing table
+  it_table = <lt_result>.
+  ev_choice = lv_choice.
 
 ENDFUNCTION.
