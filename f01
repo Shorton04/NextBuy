@@ -2,135 +2,78 @@ FUNCTION zlonza_alv_popup_table.
 *"----------------------------------------------------------------------
 *"*"Local Interface:
 *"  IMPORTING
-*"     REFERENCE(IV_START_COL)  TYPE  I DEFAULT 25
+*"     REFERENCE(IV_START_COL) TYPE  I DEFAULT 25
 *"     REFERENCE(IV_START_LINE) TYPE  I DEFAULT 6
-*"     REFERENCE(IV_END_COL)    TYPE  I DEFAULT 100
-*"     REFERENCE(IV_END_LINE)   TYPE  I DEFAULT 20
-*"     REFERENCE(IV_TITLE)      TYPE  STRING DEFAULT 'ALV'
-*"     REFERENCE(IT_FIELD_NAMES) TYPE STANDARD TABLE OPTIONAL
+*"     REFERENCE(IV_END_COL) TYPE  I DEFAULT 120
+*"     REFERENCE(IV_END_LINE) TYPE  I DEFAULT 25
+*"     REFERENCE(IV_TITLE) TYPE  STRING DEFAULT 'ALV Display'
 *"  EXPORTING
-*"     REFERENCE(EV_CHOICE) TYPE FLAG
+*"     REFERENCE(EV_CHOICE) TYPE  FLAG
 *"  CHANGING
-*"     REFERENCE(IT_TABLE)  TYPE STANDARD TABLE OPTIONAL
+*"     REFERENCE(IT_TABLE) TYPE  STANDARD TABLE
 *"----------------------------------------------------------------------
+  DATA: lo_container TYPE REF TO cl_gui_dialogbox_container,
+        lo_salv      TYPE REF TO cl_salv_table,
+        lo_events    TYPE REF TO cl_salv_events_table,
+        lv_answer    TYPE c.
 
-  DATA: lo_container   TYPE REF TO cl_gui_dialogbox_container,
-        lo_alv         TYPE REF TO cl_salv_table,
-        lo_display     TYPE REF TO cl_salv_display_settings,
-        lo_columns     TYPE REF TO cl_salv_columns_table,
-        lo_column      TYPE REF TO cl_salv_column_table,
-        lo_functions   TYPE REF TO cl_salv_functions_list,
-        lv_choice      TYPE flag,
-        lt_names       TYPE STANDARD TABLE OF zzs_alv_popup_names,
-        ls_names       TYPE zzs_alv_popup_names,
-        lv_title       TYPE c LENGTH 80.
-
-  FIELD-SYMBOLS: <fs_table> TYPE STANDARD TABLE.
-
-  IF it_table IS INITIAL.
-    RETURN.
+  " Check if GUI is available
+  IF NOT cl_gui_alv_grid=>offline( ) IS INITIAL.
+    MESSAGE 'No GUI environment found.' TYPE 'E'.
   ENDIF.
 
-  " Assign title safely (convert string → char)
-  lv_title = iv_title.
+  " Create container popup window
+  CREATE OBJECT lo_container
+    EXPORTING
+      caption = iv_title
+      top     = iv_start_line
+      left    = iv_start_col
+      width   = iv_end_col
+      height  = iv_end_line.
 
+  " Create SALV table in popup container
   TRY.
-
-      " Create popup container - POSITION is mandatory on older GUI versions
-      CREATE OBJECT lo_container
-        EXPORTING
-          caption  = lv_title
-          top      = iv_start_line
-          left     = iv_start_col
-          width    = iv_end_col
-          height   = iv_end_line
-          position = 1.  " 1=centered, 2=top-left, etc. for older kernels
-
-      " Create SALV table
-      CALL METHOD cl_salv_table=>factory
+      cl_salv_table=>factory(
         EXPORTING
           r_container = lo_container
         IMPORTING
-          r_salv_table = lo_alv
+          r_salv_table = lo_salv
         CHANGING
-          t_table = it_table.
+          t_table = it_table ).
 
-      " Display settings
-      lo_display = lo_alv->get_display_settings( ).
-      CALL METHOD lo_display->set_striped_pattern
-        EXPORTING value = abap_true.
-
-      CALL METHOD lo_display->set_list_header
-        EXPORTING value = lv_title.
-
-      " Columns and headers
-      IF it_field_names IS NOT INITIAL.
-        lt_names = it_field_names.
-        lo_columns = lo_alv->get_columns( ).
-        LOOP AT lt_names INTO ls_names.
-          TRY.
-              lo_column = lo_columns->get_column( ls_names-fieldname ).
-
-              " Older kernel requires explicit VALUE assignment
-              CALL METHOD lo_column->set_short_text
-                EXPORTING
-                  value = ls_names-heading.
-
-              CALL METHOD lo_column->set_medium_text
-                EXPORTING
-                  value = ls_names-heading.
-
-              CALL METHOD lo_column->set_long_text
-                EXPORTING
-                  value = ls_names-heading.
-
-            CATCH cx_salv_not_found.
-          ENDTRY.
-        ENDLOOP.
-      ENDIF.
-
-      " Toolbar functions
-      lo_functions = lo_alv->get_functions( ).
-      CALL METHOD lo_functions->set_all
-        EXPORTING value = abap_true.
-
-      CALL METHOD lo_functions->add_function
-        EXPORTING
-          name    = 'CONTINUE'
-          icon    = '@42@'
-          text    = 'Continue'
-          tooltip = 'Confirm and continue'.
-
-      CALL METHOD lo_functions->add_function
-        EXPORTING
-          name    = 'CANCEL'
-          icon    = '@0A@'
-          text    = 'Cancel'
-          tooltip = 'Cancel selection'.
+      " Allow all ALV functions
+      lo_salv->get_functions( )->set_all( abap_true ).
+      lo_salv->get_display_settings( )->set_list_header( iv_title ).
+      lo_salv->get_display_settings( )->set_striped_pattern( abap_true ).
+      lo_salv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>row_column ).
 
       " Display ALV
-      CALL METHOD lo_alv->display.
+      lo_salv->display( ).
 
-      " Flush GUI to render
-      CALL METHOD cl_gui_cfw=>flush.
+      " Show dialog popup with OK / Cancel
+      CALL FUNCTION 'POPUP_TO_CONFIRM'
+        EXPORTING
+          titlebar              = iv_title
+          text_question         = 'Do you want to continue?'
+          text_button_1         = 'Yes'
+          text_button_2         = 'No'
+          default_button        = '1'
+        IMPORTING
+          answer                = lv_answer.
 
-      " Basic wait for user action (for popup)
-      WAIT UP TO 1 SECONDS.
-
-      " Default continue
-      lv_choice = 'X'.
-
-      " Cleanup
-      IF lo_container IS BOUND.
-        CALL METHOD lo_container->free.
+      IF lv_answer = '1'.
+        ev_choice = abap_true.   " Continue pressed
+      ELSE.
+        ev_choice = abap_false.  " Cancel pressed
       ENDIF.
 
-    CATCH cx_salv_existing
-          cx_salv_wrong_call
-          cx_salv_msg INTO DATA(lx_salv).
-      MESSAGE lx_salv->get_text( ) TYPE 'E'.
+    CATCH cx_salv_msg INTO DATA(lx_msg).
+      MESSAGE lx_msg->get_text( ) TYPE 'E'.
   ENDTRY.
 
-  ev_choice = lv_choice.
+  " Free popup
+  IF lo_container IS BOUND.
+    CALL METHOD lo_container->free.
+  ENDIF.
 
 ENDFUNCTION.
