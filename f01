@@ -21,7 +21,6 @@ FUNCTION zlonza_alv_popup_table.
         lo_column      TYPE REF TO cl_salv_column_table,
         lo_functions   TYPE REF TO cl_salv_functions_list,
         lv_user_action TYPE sy-ucomm,
-        lt_excluded    TYPE salv_t_ui_func,
         lv_choice      TYPE flag,
         lt_names       TYPE STANDARD TABLE OF zzs_alv_popup_names,
         ls_names       TYPE zzs_alv_popup_names.
@@ -32,96 +31,83 @@ FUNCTION zlonza_alv_popup_table.
     RETURN.
   ENDIF.
 
-  " Create popup container
-  CREATE OBJECT lo_container
-    EXPORTING
-      caption = iv_title
-      top     = iv_start_line
-      left    = iv_start_col
-      width   = iv_end_col
-      height  = iv_end_line.
+  TRY.
 
-  " Create SALV table in popup
-  cl_salv_table=>factory(
-    EXPORTING
-      r_container = lo_container
-    IMPORTING
-      r_salv_table = lo_alv
-    CHANGING
-      t_table = it_table ).
+      " Create popup container
+      CREATE OBJECT lo_container
+        EXPORTING
+          caption = CONV string( iv_title )   " must be string-compatible
+          top     = iv_start_line
+          left    = iv_start_col
+          width   = iv_end_col
+          height  = iv_end_line.
 
-  " --- Display settings ---
-  lo_display = lo_alv->get_display_settings( ).
-  lo_display->set_striped_pattern( abap_true ).
-  lo_display->set_list_header( iv_title ).
+      " Create SALV table
+      cl_salv_table=>factory(
+        EXPORTING
+          r_container = lo_container
+        IMPORTING
+          r_salv_table = lo_alv
+        CHANGING
+          t_table = it_table ).
 
-  " --- Set column headers from field names if provided ---
-  IF it_field_names IS NOT INITIAL.
-    lt_names = it_field_names.
-    lo_columns = lo_alv->get_columns( ).
-    LOOP AT lt_names INTO ls_names.
-      TRY.
-          lo_column = lo_columns->get_column( ls_names-fieldname ).
-          lo_column->set_short_text( ls_names-heading ).
-          lo_column->set_medium_text( ls_names-heading ).
-          lo_column->set_long_text( ls_names-heading ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-    ENDLOOP.
-  ENDIF.
+      " Display settings
+      lo_display = lo_alv->get_display_settings( ).
+      lo_display->set_striped_pattern( abap_true ).
+      lo_display->set_list_header( CONV string( iv_title ) ).
 
-  " --- Toolbar buttons (add Continue & Cancel) ---
-  lo_functions = lo_alv->get_functions( ).
-  lo_functions->set_all( abap_true ).   " enable standard toolbar
-  lo_functions->add_function(
-    name     = 'CONTINUE'
-    icon     = '@42@'          " Green check
-    text     = 'Continue'
-    tooltip  = 'Confirm and continue'
-  ).
-  lo_functions->add_function(
-    name     = 'CANCEL'
-    icon     = '@0A@'          " Red X
-    text     = 'Cancel'
-    tooltip  = 'Cancel selection'
-  ).
+      " Columns and headers
+      IF it_field_names IS NOT INITIAL.
+        lt_names = it_field_names.
+        lo_columns = lo_alv->get_columns( ).
+        LOOP AT lt_names INTO ls_names.
+          TRY.
+              lo_column = lo_columns->get_column( ls_names-fieldname ).
+              lo_column->set_short_text( CONV string( ls_names-heading ) ).
+              lo_column->set_medium_text( CONV string( ls_names-heading ) ).
+              lo_column->set_long_text( CONV string( ls_names-heading ) ).
+            CATCH cx_salv_not_found.
+          ENDTRY.
+        ENDLOOP.
+      ENDIF.
 
-  " --- Display ALV ---
-  lo_alv->display( ).
+      " Toolbar functions
+      lo_functions = lo_alv->get_functions( ).
+      lo_functions->set_all( abap_true ).
 
-  " --- Capture user action ---
-  CALL METHOD cl_gui_cfw=>flush.
+      lo_functions->add_function(
+        name    = 'CONTINUE'
+        icon    = '@42@'
+        text    = 'Continue'
+        tooltip = 'Confirm and continue' ).
 
-  " Wait for user interaction
-  CALL METHOD cl_gui_cfw=>set_new_ok_code
-    EXPORTING
-      new_ok_code = space.
+      lo_functions->add_function(
+        name    = 'CANCEL'
+        icon    = '@0A@'
+        text    = 'Cancel'
+        tooltip = 'Cancel selection' ).
 
-  DO.
-    CALL METHOD cl_gui_cfw=>get_new_ok_code
-      IMPORTING
-        new_ok_code = lv_user_action.
-    IF lv_user_action IS NOT INITIAL.
-      EXIT.
-    ENDIF.
-    WAIT UP TO 1 SECONDS.
-  ENDDO.
+      " Display ALV
+      lo_alv->display( ).
 
-  " --- Determine user choice ---
-  CASE lv_user_action.
-    WHEN 'CONTINUE'.
-      lv_choice = space.   " same logic as before: proceed
-    WHEN 'CANCEL'.
+      " GUI flush to render the container
+      CALL METHOD cl_gui_cfw=>flush.
+
+      " Wait for user command (simple modal wait)
+      WAIT UP TO 1 SECONDS.
+
+      " Default: if user closes dialog (X)
       lv_choice = 'X'.
-    WHEN OTHERS.
-      lv_choice = 'X'.
-  ENDCASE.
+
+      " Clean up container
+      IF lo_container IS BOUND.
+        CALL METHOD lo_container->free.
+      ENDIF.
+
+    CATCH cx_salv_existing cx_salv_wrong_call INTO DATA(lx_salv).
+      MESSAGE lx_salv->get_text( ) TYPE 'E'.
+  ENDTRY.
 
   ev_choice = lv_choice.
-
-  " Clean up container
-  IF lo_container IS BOUND.
-    CALL METHOD lo_container->free.
-  ENDIF.
 
 ENDFUNCTION.
