@@ -13,11 +13,14 @@ FUNCTION zlonza_alv_popup_table.
 *"     REFERENCE(it_table)     TYPE STANDARD TABLE OPTIONAL
 *"----------------------------------------------------------------------
 
-  DATA: lo_container  TYPE REF TO cl_gui_dialogbox_container,
-        lo_salv       TYPE REF TO cl_salv_table,
-        lv_caption_s  TYPE string,            " for SALV / popup functions
-        lv_caption_c  TYPE c LENGTH 80,      " for dialog container caption
-        lv_answer     TYPE c.
+  DATA: lo_container       TYPE REF TO cl_gui_dialogbox_container,
+        lo_salv            TYPE REF TO cl_salv_table,
+        lo_functions       TYPE REF TO cl_salv_functions,
+        lo_display         TYPE REF TO cl_salv_display_settings,
+        lo_selections      TYPE REF TO cl_salv_selections,
+        lv_caption_s       TYPE string,
+        lv_caption_c       TYPE c LENGTH 80,
+        lv_answer          TYPE c.
 
   FIELD-SYMBOLS: <fs_table> TYPE STANDARD TABLE.
 
@@ -25,14 +28,11 @@ FUNCTION zlonza_alv_popup_table.
     RETURN.
   ENDIF.
 
-  " assign incoming title to string caption
+  " Prepare caption types
   lv_caption_s = iv_title.
+  lv_caption_c = lv_caption_s. " safely assign to CHAR(80)
 
-  " create a CHAR(80) version for container - truncate/pad as needed
-  lv_caption_c = lv_caption_s.
-  " If lv_caption_s longer than 80 it will be truncated when assigned to C(80)
-
-  " Create popup container for ALV - PASS CHAR caption
+  " Create popup container for ALV (needs CHAR caption)
   CREATE OBJECT lo_container
     EXPORTING
       caption = lv_caption_c
@@ -51,29 +51,39 @@ FUNCTION zlonza_alv_popup_table.
         CHANGING
           t_table      = it_table.
 
-      " Enable ALV features
-      CALL METHOD lo_salv->get_functions( )->set_all
+      " === No chained calls from here on ===
+      CALL METHOD lo_salv->get_functions
+        RECEIVING
+          value = lo_functions.
+
+      CALL METHOD lo_functions->set_all
         EXPORTING
           value = abap_true.
 
-      " Use string caption for SALV display header (pass string)
-      CALL METHOD lo_salv->get_display_settings( )->set_list_header
+      CALL METHOD lo_salv->get_display_settings
+        RECEIVING
+          value = lo_display.
+
+      CALL METHOD lo_display->set_list_header
         EXPORTING
           value = lv_caption_s.
 
-      CALL METHOD lo_salv->get_display_settings( )->set_striped_pattern
+      CALL METHOD lo_display->set_striped_pattern
         EXPORTING
           value = abap_true.
 
-      " Optional: allow row selection (single/multi)
-      CALL METHOD lo_salv->get_selections( )->set_selection_mode
+      CALL METHOD lo_salv->get_selections
+        RECEIVING
+          value = lo_selections.
+
+      CALL METHOD lo_selections->set_selection_mode
         EXPORTING
           value = if_salv_c_selection_mode=>row_column.
 
-      " Display ALV in the container
+      " Display the SALV ALV grid
       CALL METHOD lo_salv->display.
 
-      " Wait & ask confirmation (use string caption for popup titlebar)
+      " Popup confirmation
       CALL FUNCTION 'POPUP_TO_CONFIRM'
         EXPORTING
           titlebar       = lv_caption_s
