@@ -6,7 +6,7 @@ FUNCTION zlonza_alv_popup_table.
 *"     REFERENCE(iv_start_line) TYPE i DEFAULT 6
 *"     REFERENCE(iv_end_col)   TYPE i DEFAULT 120
 *"     REFERENCE(iv_end_line)  TYPE i DEFAULT 25
-*"     REFERENCE(iv_title)     TYPE c DEFAULT 'ALV Display'
+*"     REFERENCE(iv_title)     TYPE string DEFAULT 'ALV Display'
 *"  EXPORTING
 *"     REFERENCE(ev_choice)    TYPE flag
 *"  CHANGING
@@ -15,13 +15,13 @@ FUNCTION zlonza_alv_popup_table.
 
   DATA: lo_container TYPE REF TO cl_gui_dialogbox_container,
         lo_salv      TYPE REF TO cl_salv_table,
-        lv_answer    TYPE c,
-        lv_caption   TYPE c LENGTH 80.
+        lv_caption   TYPE string,
+        lv_answer    TYPE c.
 
-  " Convert safely, no CONV() usage for older ABAP versions
+  " Ensure type compatibility (string for caption)
   lv_caption = iv_title.
 
-  " Create container popup window
+  " Create popup container for ALV
   CREATE OBJECT lo_container
     EXPORTING
       caption = lv_caption
@@ -31,7 +31,7 @@ FUNCTION zlonza_alv_popup_table.
       height  = iv_end_line.
 
   TRY.
-      " Create SALV table
+      " Create SALV table inside popup
       cl_salv_table=>factory(
         EXPORTING
           r_container = lo_container
@@ -40,15 +40,16 @@ FUNCTION zlonza_alv_popup_table.
         CHANGING
           t_table = it_table ).
 
-      " Enable ALV features
+      " Activate standard functions and styling
       lo_salv->get_functions( )->set_all( abap_true ).
       lo_salv->get_display_settings( )->set_list_header( lv_caption ).
       lo_salv->get_display_settings( )->set_striped_pattern( abap_true ).
       lo_salv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>row_column ).
 
+      " Display ALV grid in popup container
       lo_salv->display( ).
 
-      " Confirmation popup after viewing
+      " Ask for user confirmation after viewing
       CALL FUNCTION 'POPUP_TO_CONFIRM'
         EXPORTING
           titlebar      = lv_caption
@@ -69,7 +70,7 @@ FUNCTION zlonza_alv_popup_table.
       MESSAGE lx_msg->get_text( ) TYPE 'E'.
   ENDTRY.
 
-  " Clean up
+  " Cleanup
   IF lo_container IS BOUND.
     lo_container->free( ).
   ENDIF.
