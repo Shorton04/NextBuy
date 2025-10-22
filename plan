@@ -1,35 +1,504 @@
-* ====================================================================
-* RICEFW ID.........: 7281
-* TR Number.........: D30K906626
-* Version...........: 1.0
-* Program...........: ZTR_A2R_KCMP_STATUS
-* Transaction Code..: SE38
-* Author............: HQ75177
-* Date..............: 21.10.2025
-* --------------------------------------------------------------------
-* Description.......: Set / Reset KCMP user status
-*                          for PM Orders (Kitting)
-* --------------------------------------------------------------------
-* Modification list.:
-* Date          Author    TR Number          Description
-* 21.10.2025   HQ75177    D30K906728    Separate form for dequeue functions.V2
-* ====================================================================
-REPORT ztr_a2r_kcmp_status.
+*&---------------------------------------------------------------------*
+*& Include ZTR_A2R_KCMP_STATUS_F01 (S/4HANA optimized - no SELECT in loops)
+*&---------------------------------------------------------------------*
 
-INCLUDE ztr_a2r_kcmp_status_top.
-INCLUDE ztr_a2r_kcmp_status_sel.
-INCLUDE ztr_a2r_kcmp_status_f01.
+*---------------------------------------------------------------------*
+* FORM: init_defaults
+*---------------------------------------------------------------------*
+FORM init_defaults.
+  gv_user = sy-uname.
+  gv_now  = sy-datum.
+ENDFORM.
 
-INITIALIZATION.
-  PERFORM init_defaults.
+*---------------------------------------------------------------------*
+* FORM: get_kcmp_status (safe & language-dependent)
+*---------------------------------------------------------------------*
+FORM get_kcmp_status.
+  DATA: lv_stsma TYPE jsto-stsma,
+        lv_aufnr TYPE aufk-aufnr,
+        lv_objnr TYPE jest-objnr.
 
-START-OF-SELECTION.
-  PERFORM get_kcmp_status.
-  PERFORM validate_selection.
-  PERFORM fetch_orders.
-  PERFORM filter_by_jest.
-  PERFORM filter_has_components.
-  PERFORM evaluate_kitting.
-  PERFORM check_authorizations.
-  PERFORM update_user_status.
-  PERFORM display_execution_log.
+  " --- Read first order number from selection
+  READ TABLE s_aufnr INDEX 1 INTO DATA(ls_range).
+  IF sy-subrc <> 0 OR ls_range-low IS INITIAL.
+    MESSAGE 'Please enter at least one Order Number.' TYPE 'E'.
+  ENDIF.
+
+  " --- Convert order number to internal format
+  lv_aufnr = ls_range-low.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = lv_aufnr
+    IMPORTING
+      output = lv_aufnr.
+
+  " --- Build OBJNR = 'OR' + padded order number
+  CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
+
+  " --- Read status profile (STSMA) from JSTO
+  SELECT SINGLE stsma
+    INTO @lv_stsma
+    FROM jsto
+    WHERE objnr = @lv_objnr.
+
+  IF sy-subrc <> 0 OR lv_stsma IS INITIAL.
+    MESSAGE |Cannot determine status profile for order { lv_aufnr }.| TYPE 'E'.
+  ENDIF.
+
+  " --- Get KCMP internal status code (language dependent)
+  SELECT SINGLE j~estat
+    INTO @gc_estat
+    FROM tj30 AS j
+      INNER JOIN tj30t AS t
+        ON j~estat = t~estat
+       AND j~stsma = t~stsma
+   WHERE j~stsma = @lv_stsma
+     AND t~txt04 = 'KCMP'
+     AND t~spras = @sy-langu.
+
+  IF sy-subrc <> 0.
+    MESSAGE |KCMP user status not found for profile { lv_stsma } and language { sy-langu }.| TYPE 'E'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: validate_selection
+*---------------------------------------------------------------------*
+FORM validate_selection.
+  IF s_aufnr[] IS INITIAL AND s_iwerk[] IS INITIAL.
+    MESSAGE 'Please enter at least one order or plant.' TYPE 'E'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: fetch_orders
+* (uses JOINs - efficient, processed in DB)
+*---------------------------------------------------------------------*
+FORM fetch_orders.
+  CLEAR gt_orders.
+
+  SELECT a~aufnr,
+         a~auart,
+         b~iwerk,
+         a~erdat,
+         c~gstrp,
+         c~gltrp,
+         a~objnr
+    FROM aufk AS a
+    INNER JOIN afih AS b ON a~aufnr = b~aufnr
+    INNER JOIN afko AS c ON a~aufnr = c~aufnr
+    WHERE a~aufnr IN @s_aufnr
+      AND a~auart IN @s_auart
+      AND b~iwerk IN @s_iwerk
+    INTO TABLE @gt_orders.
+
+  IF gt_orders IS INITIAL.
+    MESSAGE 'No orders found for selection criteria.' TYPE 'I'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: filter_by_jest
+* (bulk SELECT of JEST; then internal hashed lookups)
+*---------------------------------------------------------------------*
+FORM filter_by_jest.
+  DATA: lt_jest_all TYPE TABLE OF jest,
+        lt_keep     TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
+        lt_objnrs   TYPE TABLE OF jest-objnr,
+        ht_jest     TYPE HASHED TABLE OF jest WITH UNIQUE KEY objnr stat.
+
+  " 1) Collect OBJNRs from gt_orders
+  lt_objnrs = VALUE #( FOR wa IN gt_orders ( wa-objnr ) ).
+
+  IF lt_objnrs IS INITIAL.
+    gt_orders = VALUE #( ).
+    RETURN.
+  ENDIF.
+
+  " 2) Fetch all active JEST rows for the selected objnrs in one DB call
+  SELECT objnr stat inact
+    FROM jest
+    WHERE objnr IN @lt_objnrs
+      AND inact = @space
+    INTO TABLE @lt_jest_all.
+
+  " 3) Build hashed table for fast lookups
+  IF lt_jest_all IS NOT INITIAL.
+    LOOP AT lt_jest_all INTO DATA(ls_jx).
+      INSERT ls_jx INTO TABLE ht_jest.
+    ENDLOOP.
+  ENDIF.
+
+  " 4) Evaluate each order using in-memory JESTs (no DB calls)
+  LOOP AT gt_orders INTO DATA(ls_order_x).
+    DATA(lv_include) = abap_true.
+    DATA(lv_has_included) = abap_false.
+
+    " Exclude condition: any status in s_statex for this objnr
+    LOOP AT s_statex ASSIGNING FIELD-SYMBOL(<fs_statex>).
+      READ TABLE ht_jest WITH TABLE KEY objnr = ls_order_x-objnr stat = <fs_statex>-low TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        lv_include = abap_false.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    IF lv_include = abap_false.
+      CONTINUE.
+    ENDIF.
+
+    " Include condition: at least one status in s_statin
+    LOOP AT s_statin ASSIGNING FIELD-SYMBOL(<fs_statin>).
+      READ TABLE ht_jest WITH TABLE KEY objnr = ls_order_x-objnr stat = <fs_statin>-low TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        lv_has_included = abap_true.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    IF lv_has_included = abap_true.
+      APPEND ls_order_x TO lt_keep.
+    ENDIF.
+  ENDLOOP.
+
+  gt_orders = lt_keep.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: filter_has_components
+* (bulk SELECT using IN on pre-collected aufnr list)
+*---------------------------------------------------------------------*
+FORM filter_has_components.
+  DATA: lt_keep       TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
+        lt_aufnrs     TYPE TABLE OF resb-aufnr,
+        lt_resb_exist TYPE TABLE OF resb-aufnr,
+        ht_resb_exist TYPE HASHED TABLE OF resb-aufnr WITH UNIQUE KEY table_line.
+
+  " Collect aufnr list from gt_orders
+  lt_aufnrs = VALUE #( FOR wa IN gt_orders ( wa-aufnr ) ).
+
+  IF lt_aufnrs IS INITIAL.
+    gt_orders = VALUE #( ).
+    RETURN.
+  ENDIF.
+
+  " Bulk select of distinct aufnr that have non-deleted components
+  SELECT DISTINCT aufnr
+    FROM resb
+    WHERE aufnr IN @lt_aufnrs
+      AND xloek = @space
+    INTO TABLE @lt_resb_exist.
+
+  IF lt_resb_exist IS NOT INITIAL.
+    ht_resb_exist = lt_resb_exist.
+  ENDIF.
+
+  " Build filtered list using hashed lookup (no DB in loop)
+  LOOP AT gt_orders INTO DATA(ls_order_y).
+    READ TABLE ht_resb_exist WITH TABLE KEY table_line = ls_order_y-aufnr TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      APPEND ls_order_y TO lt_keep.
+    ENDIF.
+  ENDLOOP.
+
+  gt_orders = lt_keep.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: evaluate_kitting
+* (use aggregation: SUM(bdmng), SUM(enmng) GROUP BY aufnr)
+*---------------------------------------------------------------------*
+FORM evaluate_kitting.
+  TYPES: BEGIN OF ty_resb_sum,
+           aufnr        TYPE resb-aufnr,
+           total_req    TYPE resb-bdmng,
+           total_issued TYPE resb-enmng,
+         END OF ty_resb_sum.
+
+  DATA: lt_resb_summary TYPE TABLE OF ty_resb_sum,
+        ht_resb_sum     TYPE HASHED TABLE OF ty_resb_sum WITH UNIQUE KEY aufnr,
+        lt_log_local    TYPE STANDARD TABLE OF lty_log WITH EMPTY KEY.
+
+  " Collect aufnrs we want to evaluate
+  DATA(lt_aufnrs) = VALUE #( FOR wa IN gt_orders ( wa-aufnr ) ).
+
+  IF lt_aufnrs IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  " Aggregate required and issued quantities per order in a single DB call
+  SELECT aufnr
+         SUM( bdmng )   AS total_req
+         SUM( enmng )   AS total_issued
+    FROM resb
+    WHERE aufnr IN @lt_aufnrs
+      AND xloek = @space
+    GROUP BY aufnr
+    INTO TABLE @lt_resb_summary.
+
+  " Build hashed summary
+  IF lt_resb_summary IS NOT INITIAL.
+    LOOP AT lt_resb_summary INTO DATA(ls_sum).
+      INSERT ls_sum INTO TABLE ht_resb_sum.
+    ENDLOOP.
+  ENDIF.
+
+  " Use summary to evaluate completeness (no SELECT inside loop)
+  LOOP AT gt_orders INTO DATA(ls_order_z).
+    DATA(lv_all_complete) = abap_false.
+
+    READ TABLE ht_resb_sum INTO DATA(ls_rs) WITH KEY aufnr = ls_order_z-aufnr.
+    IF sy-subrc = 0 AND ls_rs-total_req IS NOT INITIAL
+       AND ls_rs-total_issued >= ls_rs-total_req.
+      lv_all_complete = abap_true.
+    ENDIF.
+
+    IF lv_all_complete = abap_true.
+      APPEND VALUE #( aufnr = ls_order_z-aufnr
+                      auart = ls_order_z-auart
+                      iwerk = ls_order_z-iwerk
+                      msgtxt = 'Ready to set KCMP'
+                      light  = 'Y' ) TO lt_log_local.
+    ELSE.
+      APPEND VALUE #( aufnr = ls_order_z-aufnr
+                      auart = ls_order_z-auart
+                      iwerk = ls_order_z-iwerk
+                      msgtxt = 'Incomplete components'
+                      light  = 'R' ) TO lt_log_local.
+    ENDIF.
+  ENDLOOP.
+
+  " Replace global log with results from evaluation (preserve previous log entries if you want, adjust accordingly)
+  gt_log = lt_log_local.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: check_authorizations
+*---------------------------------------------------------------------*
+FORM check_authorizations.
+  AUTHORITY-CHECK OBJECT 'C_AFKO_ACT' ID 'PS_ACTVT' FIELD '02'.
+  IF sy-subrc <> 0.
+    MESSAGE 'User not authorized to change orders.' TYPE 'E'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: update_user_status (batch BAPI)
+*---------------------------------------------------------------------*
+FORM update_user_status.
+  DATA: lt_header_all  TYPE TABLE OF bapi_alm_order_headers_i,
+        lt_status_all  TYPE TABLE OF bapi_alm_order_usrstat,
+        lt_methods_all TYPE TABLE OF bapi_alm_order_method,
+        lt_return      TYPE TABLE OF bapiret2,
+        ls_return      TYPE bapiret2,
+        lt_to_process  TYPE TABLE OF lty_log,
+        lv_action      TYPE string.
+
+  " Collect orders to process (those with light = 'Y')
+  LOOP AT gt_log INTO DATA(ls_glog) WHERE light = 'Y'.
+    APPEND ls_glog TO lt_to_process.
+  ENDLOOP.
+
+  IF lt_to_process IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  lv_action = COND string( WHEN p_reset = abap_true THEN 'RESET' ELSE 'SET' ).
+
+  DATA(lv_refnum) = 1.
+  DATA(lv_ref)     TYPE char10.
+
+  LOOP AT lt_to_process INTO DATA(ls_proc).
+    APPEND VALUE #( orderid = ls_proc-aufnr ) TO lt_header_all.
+
+    IF lv_action = 'SET'.
+      APPEND VALUE #( orderid = ls_proc-aufnr user_st_text = 'KCMP' langu = p_spras ) TO lt_status_all.
+    ELSE.
+      APPEND VALUE #( orderid = ls_proc-aufnr user_st_text = 'KCMP' inactive = 'X' langu = p_spras ) TO lt_status_all.
+    ENDIF.
+
+    lv_ref = |{ lv_refnum }|.
+    APPEND VALUE #( refnumber = lv_ref objecttype = 'HEADER'     method = 'CHANGE' objectkey = ls_proc-aufnr ) TO lt_methods_all.
+    APPEND VALUE #( refnumber = lv_ref objecttype = 'USERSTATUS' method = 'CHANGE' objectkey = ls_proc-aufnr ) TO lt_methods_all.
+    APPEND VALUE #( refnumber = lv_ref objecttype = 'ORDER'      method = 'SAVE'   objectkey = ls_proc-aufnr ) TO lt_methods_all.
+
+    lv_refnum = lv_refnum + 1.
+  ENDLOOP.
+
+  " Single BAPI call for all orders
+  CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
+    TABLES
+      it_header     = lt_header_all
+      it_methods    = lt_methods_all
+      it_userstatus = lt_status_all
+      return        = lt_return.
+
+  " If any error returned, mark those orders as failed and rollback.
+  READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
+  IF sy-subrc = 0.
+    LOOP AT gt_log INTO DATA(ls_fail) WHERE light = 'Y'.
+      ls_fail-msgtxt = ls_return-message(72).
+      ls_fail-light  = 'R'.
+      MODIFY gt_log FROM ls_fail TRANSPORTING msgtxt light WHERE aufnr = ls_fail-aufnr.
+    ENDLOOP.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    RETURN.
+  ENDIF.
+
+  " No errors -> mark as success and commit once
+  LOOP AT gt_log INTO DATA(ls_succ) WHERE light = 'Y'.
+    IF lv_action = 'SET'.
+      ls_succ-msgtxt = |KCMP set successfully ({ gc_estat })|.
+    ELSE.
+      ls_succ-msgtxt = |KCMP reset successfully ({ gc_estat })|.
+    ENDIF.
+    ls_succ-light = 'G'.
+    MODIFY gt_log FROM ls_succ TRANSPORTING msgtxt light WHERE aufnr = ls_succ-aufnr.
+  ENDLOOP.
+
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+
+  " Release locks for processed orders
+  LOOP AT lt_to_process INTO DATA(ls_rel).
+    PERFORM release_locks USING ls_rel-aufnr.
+  ENDLOOP.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: display_execution_log
+*---------------------------------------------------------------------*
+FORM display_execution_log.
+
+  DATA: lo_alv  TYPE REF TO cl_salv_table,
+        lo_cols TYPE REF TO cl_salv_columns_table,
+        lo_col  TYPE REF TO cl_salv_column,
+        lo_func TYPE REF TO cl_salv_functions,
+        ls_log  TYPE lty_log,
+        lx_msg  TYPE REF TO cx_salv_msg,
+        lx_nf   TYPE REF TO cx_salv_not_found.
+
+  IF gt_log IS INITIAL.
+    MESSAGE 'No orders processed.' TYPE 'I'.
+    EXIT.
+  ENDIF.
+
+  TRY.
+      CALL METHOD cl_salv_table=>factory
+        IMPORTING
+          r_salv_table = lo_alv
+        CHANGING
+          t_table      = gt_log.
+
+      lo_func = lo_alv->get_functions( ).
+      lo_func->set_all( abap_true ).
+
+      lo_cols = lo_alv->get_columns( ).
+
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'AUFNR' RECEIVING value = lo_col.
+      lo_col->set_short_text( 'Order' ).
+      lo_col->set_medium_text( 'Order Number' ).
+      lo_col->set_long_text( 'Maintenance Order Number' ).
+
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'AUART' RECEIVING value = lo_col.
+      lo_col->set_medium_text( 'Order Type' ).
+
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'IWERK' RECEIVING value = lo_col.
+      lo_col->set_medium_text( 'Plant' ).
+
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'MSGTXT' RECEIVING value = lo_col.
+      lo_col->set_medium_text( 'Component Check' ).
+
+      CALL METHOD lo_cols->get_column EXPORTING columnname = 'LIGHT' RECEIVING value = lo_col.
+      lo_col->set_medium_text( 'Result' ).
+
+      lo_alv->display( ).
+
+    CATCH cx_salv_not_found INTO lx_nf.
+      MESSAGE lx_nf->get_text( ) TYPE 'I'.
+    CATCH cx_salv_msg INTO lx_msg.
+      LOOP AT gt_log INTO ls_log.
+        WRITE: / ls_log-aufnr, ls_log-iwerk, ls_log-msgtxt.
+      ENDLOOP.
+  ENDTRY.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: release_locks
+*---------------------------------------------------------------------*
+FORM release_locks USING p_aufnr TYPE aufk-aufnr.
+  DATA: lv_fm_used TYPE funcname VALUE space,
+        lt_fms     TYPE TABLE OF funcname,
+        lv_fm      TYPE funcname,
+        lv_exists  TYPE funcname,
+        lv_msg     TYPE char100.
+
+  DATA: lv_aufnr    TYPE aufk-aufnr,
+        lv_rsnum    TYPE resb-rsnum,
+        lv_prueflos TYPE qals-prueflos,
+        lv_qmnum    TYPE qmel-qmnum,
+        lv_objnr    TYPE jest-objnr.
+
+  " Normalize order number
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_aufnr
+    IMPORTING
+      output = lv_aufnr.
+
+  " Related data (for optional unlocks)
+  SELECT SINGLE rsnum INTO @lv_rsnum
+    FROM resb
+    WHERE aufnr = @lv_aufnr
+      AND xloek = @space.
+
+  SELECT SINGLE prueflos INTO @lv_prueflos
+    FROM qals
+    WHERE aufnr = @lv_aufnr.
+
+  SELECT SINGLE qmnum INTO @lv_qmnum
+    FROM qmel
+    WHERE aufnr = @lv_aufnr.
+
+  CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
+
+  lt_fms = VALUE #(
+    ( 'DEQUEUE_EAUFK' ) ( 'DEQUEUE_EAFKO' ) ( 'DEQUEUE_EAFVC' )
+    ( 'DEQUEUE_EEQUI' ) ( 'DEQUEUE_EIFLOT' ) ( 'DEQUEUE_ERESB' )
+    ( 'DEQUEUE_ERKPF' ) ( 'DEQUEUE_EQALS' ) ( 'DEQUEUE_EQMEL' )
+  ).
+
+  LOOP AT lt_fms INTO lv_fm.
+    SELECT SINGLE funcname INTO lv_exists FROM tfdir WHERE funcname = lv_fm.
+    IF sy-subrc <> 0.
+      CONTINUE.
+    ENDIF.
+
+    TRY.
+        CASE lv_fm.
+          WHEN 'DEQUEUE_EAUFK' OR 'DEQUEUE_EAFKO'.
+            CALL FUNCTION lv_fm EXPORTING aufnr = lv_aufnr.
+          WHEN 'DEQUEUE_EAFVC'.
+            CALL FUNCTION lv_fm EXPORTING objnr = lv_objnr.
+          WHEN 'DEQUEUE_ERESB' OR 'DEQUEUE_ERKPF'.
+            IF lv_rsnum IS NOT INITIAL.
+              CALL FUNCTION lv_fm EXPORTING rsnum = lv_rsnum.
+            ENDIF.
+          WHEN 'DEQUEUE_EQALS'.
+            IF lv_prueflos IS NOT INITIAL.
+              CALL FUNCTION lv_fm EXPORTING prueflos = lv_prueflos.
+            ENDIF.
+          WHEN 'DEQUEUE_EQMEL'.
+            IF lv_qmnum IS NOT INITIAL.
+              CALL FUNCTION lv_fm EXPORTING qmnum = lv_qmnum.
+            ENDIF.
+        ENDCASE.
+      CATCH cx_root INTO DATA(lx_root).
+        CONTINUE.
+    ENDTRY.
+  ENDLOOP.
+
+  CALL FUNCTION 'DEQUEUE_ALL'.
+
+  CONCATENATE 'Locks released for order' lv_aufnr INTO lv_msg SEPARATED BY space.
+  WRITE: / lv_msg.
+ENDFORM.
