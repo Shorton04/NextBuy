@@ -1,29 +1,38 @@
 *---------------------------------------------------------------------*
-* Get first operation (Optimized: use prefetched join)
+* Prepare output (Optimized)
 *---------------------------------------------------------------------*
-FORM f_get_operation USING ps_order TYPE viaufkst
-                     CHANGING pv_vornr TYPE afvc-vornr.
+FORM f_prepare_output USING ps_order TYPE viaufkst
+                            pv_vornr TYPE vornr
+                            pv_stat  TYPE jest-stat.
 
-  DATA: ls_op TYPE ty_op.
+  CLEAR gs_output.
 
-  IF gt_operations IS INITIAL.
-    " Prefetch all operations for all orders
-    SELECT a~aufnr, v~vornr, v~objnr
-      FROM afko AS a
-      INNER JOIN afvc AS v ON a~aufpl = v~aufpl
-      FOR ALL ENTRIES IN @gt_orders
-      WHERE a~aufnr = @gt_orders-aufnr
-      INTO TABLE @gt_operations.
+  gs_output-OrderMessageStatus        = 'CREATE'.
+  gs_output-Plant                     = ps_order-iwerk.
+  gs_output-MaintenanceOrder          = ps_order-aufnr.
+  gs_output-MaintenanceOrderOperation = pv_vornr.
+  gs_output-MaintOrdBasicStartDate    = ps_order-gstrp.
+  gs_output-MaintOrdBasicEndDate      = ps_order-gltrp.
+  gs_output-LatestAcceptableComplDate = ps_order-lacd_date.
+  gs_output-SystemId                  = sy-sysid.
 
-    SORT gt_operations BY aufnr.
+  " Determine final system status text (from prefetched data)
+  DATA(lv_teco_active) = abap_false.
+  READ TABLE gt_jest WITH KEY objnr = ps_order-objnr stat = 'I0045' inact = '' TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    lv_teco_active = abap_true.
   ENDIF.
 
-  READ TABLE gt_operations INTO ls_op
-    WITH KEY aufnr = ps_order-aufnr BINARY SEARCH.
+  READ TABLE gt_tj02t INTO DATA(ls_tj02t)
+    WITH KEY istat = COND #( WHEN lv_teco_active = abap_true THEN 'I0045' ELSE pv_stat ).
   IF sy-subrc = 0.
-    pv_vornr = ls_op-vornr.
+    gs_output-SystemStatusText = ls_tj02t-txt04.
+  ENDIF.
+
+  IF ps_order-equnr IS NOT INITIAL.
+    gs_output-TechnicalObject = ps_order-equnr.
   ELSE.
-    pv_vornr = ''.
+    gs_output-TechnicalObject = ps_order-tplnr.
   ENDIF.
 
 ENDFORM.
