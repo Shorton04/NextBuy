@@ -7,6 +7,8 @@ FORM f_prefetch_data.
     RETURN.
   ENDIF.
 
+  DATA(lv_mandt) = sy-mandt.
+
   "---------------------------------------------------------------"
   " Prefetch all JEST statuses for all orders
   "---------------------------------------------------------------"
@@ -58,54 +60,11 @@ FORM f_prefetch_data.
          c~utime
     FROM cdhdr AS c
     INNER JOIN viaufkst AS v
-      ON c~objectid = CONCAT( sy-mandt, '30', v~aufnr )
+      ON c~objectid = CONCAT( lv_mandt, CONCAT( '30', v~aufnr ) )
     WHERE c~objectclas = 'ORDER'
     INTO TABLE @gt_cdhdr.
 
   SORT gt_cdhdr BY objectid udate utime.
   DELETE ADJACENT DUPLICATES FROM gt_cdhdr COMPARING objectid udate utime.
-
-ENDFORM.
-
-
-
-
-*---------------------------------------------------------------------*
-* Get first valid (non-deleted) operation for an order (optimized)
-*---------------------------------------------------------------------*
-FORM f_get_operation USING    ps_order TYPE viaufkst
-                     CHANGING pv_vornr TYPE afvc-vornr.
-
-  DATA: lv_aufpl TYPE afko-aufpl.
-
-  CLEAR pv_vornr.
-
-  "---------------------------------------------------------------"
-  " Get routing number from AFKO (order header)
-  "---------------------------------------------------------------"
-  SELECT SINGLE aufpl
-    INTO @lv_aufpl
-    FROM afko
-   WHERE aufnr = @ps_order-aufnr.
-
-  IF sy-subrc <> 0 OR lv_aufpl IS INITIAL.
-    RETURN. " No routing found for this order
-  ENDIF.
-
-  "---------------------------------------------------------------"
-  " Get first active operation (AFVC joined with JEST)
-  "---------------------------------------------------------------"
-  SELECT a~vornr
-    FROM afvc AS a
-    LEFT JOIN jest AS j
-      ON j~objnr = a~objnr
-     AND j~stat  = 'I0013'  " Deleted
-     AND j~inact = ''
-    WHERE a~aufpl = @lv_aufpl
-      AND j~objnr IS NULL    " Skip deleted ops
-    ORDER BY a~aplzl
-    INTO @pv_vornr
-    UP TO 1 ROWS.
-  ENDSELECT.
 
 ENDFORM.
