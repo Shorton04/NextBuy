@@ -8,6 +8,7 @@ FUNCTION zlonza_alv_popup_table.
 *"  CHANGING
 *"     REFERENCE(IT_TABLE) TYPE STANDARD TABLE OPTIONAL
 *"----------------------------------------------------------------------
+
   DATA: lo_container TYPE REF TO cl_gui_dialogbox_container,
         lo_salv      TYPE REF TO cl_salv_table,
         lo_functions TYPE REF TO cl_salv_functions,
@@ -16,25 +17,23 @@ FUNCTION zlonza_alv_popup_table.
         lv_answer    TYPE c,
         lv_caption   TYPE string.
 
-  FIELD-SYMBOLS: <fs_table> TYPE STANDARD TABLE.
-
   IF it_table IS INITIAL.
     MESSAGE 'No data to display in popup table.' TYPE 'I'.
     RETURN.
   ENDIF.
 
   TRY.
-      " Container title
+      " Caption and size settings
       lv_caption = iv_title.
 
-      " Create popup container window for ALV
+      " Create popup container window for ALV (larger size)
       CREATE OBJECT lo_container
         EXPORTING
           caption = lv_caption
-          top     = 10
-          left    = 10
-          width   = 150
-          height  = 40.
+          top     = 5
+          left    = 5
+          width   = 200   " Wider popup
+          height  = 60.   " Taller popup
 
       " Create SALV Table inside popup
       cl_salv_table=>factory(
@@ -56,28 +55,31 @@ FUNCTION zlonza_alv_popup_table.
       lo_columns = lo_salv->get_columns( ).
       lo_columns->set_optimize( abap_true ).
 
-      " Display popup table
+      " Display popup
       lo_salv->display( ).
 
-      " Ask user if want to continue
+      " Ask user whether to continue
       CALL FUNCTION 'POPUP_TO_CONFIRM'
         EXPORTING
           titlebar       = iv_title
-          text_question  = 'Do you want to continue to the next step?'
+          text_question  = 'Do you want to continue to the next popup?'
           text_button_1  = 'Yes'
           text_button_2  = 'No'
           default_button = '1'
         IMPORTING
           answer         = lv_answer.
 
+      " --- Close popup cleanly before continuing ---
+      IF lo_container IS BOUND.
+        CALL METHOD lo_container->free.
+        lo_container = NOTHING.
+      ENDIF.
+
       IF lv_answer = '1'.
         ev_choice = abap_false. " Continue
       ELSE.
         ev_choice = abap_true.  " Stop
       ENDIF.
-
-      " Clean up the container
-      FREE lo_container.
 
     CATCH cx_salv_msg INTO DATA(lx_msg).
       MESSAGE lx_msg->get_text( ) TYPE 'E'.
