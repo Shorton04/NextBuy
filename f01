@@ -39,9 +39,10 @@ TYPES: BEGIN OF ty_jest_data,
          inact TYPE jest-inact,
        END OF ty_jest_data.
 
+"--- Corrected INOB type alignment (fixes FOR ALL ENTRIES length issue)
 TYPES: BEGIN OF ty_inob_data,
-         objek TYPE inob-objek,
-         cuobj TYPE inob-cuobj,
+         objek TYPE c LENGTH 18,  "INOB-OBJEK is CHAR(18)
+         cuobj TYPE cuobn,        "CUOBJ is NUMC(18)
        END OF ty_inob_data.
 
 TYPES: BEGIN OF ty_ausp_data,
@@ -55,6 +56,15 @@ TYPES: BEGIN OF ty_cdhdr_data,
          udate    TYPE cdhdr-udate,
          utime    TYPE cdhdr-utime,
        END OF ty_cdhdr_data.
+
+"--- Added for Change Documents (JCDS Prefetch)
+TYPES: BEGIN OF ty_jcds_data,
+         objnr TYPE jcds-objnr,
+         stat  TYPE jcds-stat,
+         chgnr TYPE jcds-chgnr,
+         udate TYPE jcds-udate,
+         utime TYPE jcds-utime,
+       END OF ty_jcds_data.
 
 "--- Added for Operation Prefetch
 TYPES: BEGIN OF ty_op,
@@ -84,7 +94,9 @@ DATA: gt_jest  TYPE TABLE OF ty_jest_data,
       gt_ausp  TYPE TABLE OF ty_ausp_data,
       gs_ausp  TYPE ty_ausp_data,
       gt_cdhdr TYPE TABLE OF ty_cdhdr_data,
-      gs_cdhdr TYPE ty_cdhdr_data.
+      gs_cdhdr TYPE ty_cdhdr_data,
+      gt_jcds  TYPE TABLE OF ty_jcds_data,
+      gs_jcds  TYPE ty_jcds_data.
 
 "--- Added for Prefetch and Operation Cache
 DATA: gt_operations TYPE TABLE OF ty_op,
