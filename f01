@@ -2,28 +2,33 @@ FUNCTION zlonza_alv_popup_table.
 *"----------------------------------------------------------------------
 *"*"Local Interface:
 *"  IMPORTING
-*"     REFERENCE(IV_START_COL) TYPE  I DEFAULT 25
-*"     REFERENCE(IV_START_LINE) TYPE  I DEFAULT 6
-*"     REFERENCE(IV_END_COL) TYPE  I DEFAULT 100
-*"     REFERENCE(IV_END_LINE) TYPE  I DEFAULT 10
-*"     REFERENCE(IV_TITLE) TYPE  STRING DEFAULT 'ALV'
+*"     REFERENCE(iv_start_col)  TYPE i DEFAULT 25
+*"     REFERENCE(iv_start_line) TYPE i DEFAULT 6
+*"     REFERENCE(iv_end_col)    TYPE i DEFAULT 100
+*"     REFERENCE(iv_end_line)   TYPE i DEFAULT 10
+*"     REFERENCE(iv_title)      TYPE string DEFAULT 'ALV'
+*"     REFERENCE(it_field_names) TYPE STANDARD TABLE OPTIONAL
+*"  CHANGING
+*"     REFERENCE(it_table) TYPE STANDARD TABLE OPTIONAL
 *"  EXPORTING
-*"     REFERENCE(EV_CHOICE) TYPE  FLAG
-*"  TABLES
-*"      IT_TABLE TYPE  STANDARD TABLE OPTIONAL
-*"      IT_FIELD_NAMES TYPE STANDARD TABLE OPTIONAL
+*"     REFERENCE(ev_choice) TYPE flag
 *"----------------------------------------------------------------------
 
-  DATA:lo_popup  TYPE REF TO cl_reca_gui_f4_popup,
-       lt_names  TYPE STANDARD TABLE OF zzs_alv_popup_names,
-       ls_names  TYPE zzs_alv_popup_names,
-       lv_choice TYPE flag.
+  DATA: lo_popup   TYPE REF TO cl_reca_gui_f4_popup,
+        lt_names   TYPE STANDARD TABLE OF zzs_alv_popup_names,
+        ls_names   TYPE zzs_alv_popup_names,
+        lv_cancel  TYPE abap_bool,
+        lt_result  TYPE STANDARD TABLE OF string.  " placeholder for popup result
 
-  CHECK it_table IS INITIAL.
+  " safeguard: don't open popup if table is empty
+  IF it_table IS INITIAL.
+    RETURN.
+  ENDIF.
 
+  " Create popup instance
   CALL METHOD cl_reca_gui_f4_popup=>factory_grid
     EXPORTING
-      it_f4value     = it_table[]
+      it_f4value     = it_table
       if_multi       = abap_false
       id_title       = iv_title
     RECEIVING
@@ -31,7 +36,8 @@ FUNCTION zlonza_alv_popup_table.
 
   CHECK lo_popup IS BOUND.
 
-  MOVE-CORRESPONDING it_field_names[] TO lt_names.
+  " Transfer column names (headings)
+  MOVE-CORRESPONDING it_field_names TO lt_names.
 
   LOOP AT lt_names INTO ls_names.
     CALL METHOD lo_popup->set_field_text
@@ -40,16 +46,27 @@ FUNCTION zlonza_alv_popup_table.
         id_text      = ls_names-heading.
   ENDLOOP.
 
+  " Display popup (check button enabled by default)
   CALL METHOD lo_popup->display
     EXPORTING
-      id_start_column = iv_start_col
-      id_start_line   = iv_start_line
-      id_end_column   = iv_end_col
-      id_end_line     = iv_end_line
+      id_start_column    = iv_start_col
+      id_start_line      = iv_start_line
+      id_end_column      = iv_end_col
+      id_end_line        = iv_end_line
+      if_send_cancel_msg = abap_false    " <— Enables green ✓ and red X buttons
     IMPORTING
-      et_result       = it_table[]
-      ef_cancelled    = lv_choice.
+      et_result          = lt_result
+      ef_cancelled       = lv_cancel.
 
-  ev_choice = lv_choice.
+  " Handle user action
+  IF lv_cancel = abap_true.
+    ev_choice = abap_false.
+  ELSE.
+    " If user clicked ✓, update calling table
+    IF lt_result IS NOT INITIAL.
+      it_table = lt_result.
+    ENDIF.
+    ev_choice = abap_true.
+  ENDIF.
 
 ENDFUNCTION.
