@@ -1,4 +1,4 @@
-FORM f_get_operation USING ps_order TYPE viaufkst
+FORM f_get_operation USING    ps_order TYPE viaufkst
                      CHANGING pv_vornr TYPE afvc-vornr.
 
   DATA: lv_aufpl TYPE afko-aufpl,
@@ -11,12 +11,14 @@ FORM f_get_operation USING ps_order TYPE viaufkst
            objnr TYPE afvc-objnr,
          END OF ty_op.
 
-  DATA: ls_op  TYPE ty_op,
-        lt_ops TYPE TABLE OF ty_op.
+  DATA: ls_op      TYPE ty_op,
+        lt_ops     TYPE TABLE OF ty_op,
+        lt_jest_op TYPE TABLE OF jest,
+        ls_jest_op TYPE jest.
 
   CLEAR pv_vornr.
 
-  " 1️ Get routing number for this order (AFKO)
+  " Step 1: Get routing number for this order (AFKO)
   SELECT SINGLE aufpl
     INTO @lv_aufpl
     FROM afko
@@ -26,7 +28,7 @@ FORM f_get_operation USING ps_order TYPE viaufkst
     RETURN. " No routing found for this order
   ENDIF.
 
-  " 2️ Get operations linked to that routing (AFVC)
+  " Step 2: Get operations linked to that routing (AFVC)
   SELECT vornr, objnr
     FROM afvc
     WHERE aufpl = @lv_aufpl
@@ -37,16 +39,26 @@ FORM f_get_operation USING ps_order TYPE viaufkst
     RETURN.
   ENDIF.
 
-  " 3️ Loop and pick the first active (not deleted) operation
+  " Step 3: Prefetch all JEST statuses for these operations
+  SELECT objnr, stat, inact
+    FROM jest
+    FOR ALL ENTRIES IN @lt_ops
+    WHERE objnr = @lt_ops-objnr
+    INTO TABLE @lt_jest_op.
+
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+
+  " Step 4: Loop and find the first active (not deleted) operation
   LOOP AT lt_ops INTO ls_op.
 
-    SELECT SINGLE stat
-      FROM jest
-     WHERE objnr = @ls_op-objnr
-       AND stat  = 'I0013'  " Deleted
-       AND inact = ''
-     INTO @lv_stat.
+    READ TABLE lt_jest_op INTO ls_jest_op
+         WITH KEY objnr = ls_op-objnr
+                  stat  = 'I0013'
+                  inact = ''.
 
+    " If not found in JEST as 'deleted', it's a valid operation
     IF sy-subrc <> 0.
       pv_vornr = ls_op-vornr.
       pv_found = abap_true.
@@ -55,6 +67,7 @@ FORM f_get_operation USING ps_order TYPE viaufkst
 
   ENDLOOP.
 
+  " Step 5: No valid operation found
   IF pv_found = abap_false.
     pv_vornr = ''.
   ENDIF.
