@@ -17,7 +17,7 @@ FORM validate_selection.
 ENDFORM.
 
 *---------------------------------------------------------------------*
-* Fetch Orders using VIAUFKST
+* Fetch Orders using optimized join (S/4HANA)
 *---------------------------------------------------------------------*
 FORM fetch_orders.
   CLEAR gt_orders.
@@ -56,19 +56,13 @@ FORM filter_by_jest.
   DELETE gt_orders WHERE objnr NOT IN (
     SELECT objnr FROM @lt_jest AS j
       WHERE j~inact = @space
+        AND j~stat IN @s_statin
   ).
 
   DELETE gt_orders WHERE objnr IN (
     SELECT objnr FROM @lt_jest AS j
       WHERE j~inact = @space
         AND j~stat IN @s_statex
-  ).
-
-  " Keep only those that have inclusive statuses
-  DELETE gt_orders WHERE objnr NOT IN (
-    SELECT objnr FROM @lt_jest AS j
-      WHERE j~inact = @space
-        AND j~stat IN @s_statin
   ).
 ENDFORM.
 
@@ -89,10 +83,10 @@ FORM filter_has_components.
 ENDFORM.
 
 *---------------------------------------------------------------------*
-* Evaluate kitting completeness per FDS (optimized)
+* Evaluate kitting completeness (Green/Yellow/Red logic)
 *---------------------------------------------------------------------*
 FORM evaluate_kitting.
-  DATA: lt_resb TYPE TABLE OF resb.
+  DATA lt_resb TYPE TABLE OF resb.
 
   SELECT aufnr, postp, enmng, bdmng, xloek
     FROM resb
@@ -104,16 +98,16 @@ FORM evaluate_kitting.
   SORT lt_resb BY aufnr.
 
   LOOP AT gt_orders INTO DATA(ls_ord).
-    DATA(lt_components) = VALUE #( FOR r IN lt_resb WHERE ( aufnr = ls_ord-aufnr ) ( r ) ).
-    IF lt_components IS INITIAL.
+    DATA(lt_comp) = VALUE #( FOR r IN lt_resb WHERE ( aufnr = ls_ord-aufnr ) ( r ) ).
+    IF lt_comp IS INITIAL.
       CONTINUE.
     ENDIF.
 
     DATA(lv_l_complete) = abap_true.
     DATA(lv_n_complete) = abap_true.
 
-    IF p_reserv = abap_true OR line_exists( lt_components[ postp = 'L' ] ).
-      LOOP AT lt_components INTO DATA(ls_l) WHERE postp = 'L'.
+    IF p_reserv = abap_true.
+      LOOP AT lt_comp INTO DATA(ls_l) WHERE postp = 'L'.
         IF ls_l-enmng < ls_l-bdmng.
           lv_l_complete = abap_false.
           EXIT.
@@ -121,8 +115,8 @@ FORM evaluate_kitting.
       ENDLOOP.
     ENDIF.
 
-    IF p_preq = abap_true OR line_exists( lt_components[ postp = 'N' ] ).
-      LOOP AT lt_components INTO DATA(ls_n) WHERE postp = 'N'.
+    IF p_preq = abap_true.
+      LOOP AT lt_comp INTO DATA(ls_n) WHERE postp = 'N'.
         IF ls_n-enmng < ls_n-bdmng.
           lv_n_complete = abap_false.
           EXIT.
@@ -130,33 +124,27 @@ FORM evaluate_kitting.
       ENDLOOP.
     ENDIF.
 
-    DATA(lv_mark_set) = abap_false.
-    IF p_reserv = abap_true AND p_preq = abap_true.
-      IF lv_l_complete = abap_true AND lv_n_complete = abap_true.
-        lv_mark_set = abap_true.
-      ENDIF.
-    ELSEIF p_reserv = abap_true AND p_preq = abap_false.
-      IF lv_l_complete = abap_true.
-        lv_mark_set = abap_true.
-      ENDIF.
-    ELSEIF p_reserv = abap_false AND p_preq = abap_true.
-      IF lv_n_complete = abap_true.
-        lv_mark_set = abap_true.
-      ENDIF.
-    ELSE.
-      lv_mark_set = abap_true. " No checkbox => allow all
+    DATA(lv_ready) = abap_false.
+    IF ( p_reserv = abap_true AND p_preq = abap_true AND
+         lv_l_complete = abap_true AND lv_n_complete = abap_true )
+      OR ( p_reserv = abap_true AND p_preq = abap_false AND lv_l_complete = abap_true )
+      OR ( p_reserv = abap_false AND p_preq = abap_true AND lv_n_complete = abap_true )
+      OR ( p_reserv = abap_false AND p_preq = abap_false ).
+      lv_ready = abap_true.
     ENDIF.
 
-    IF lv_mark_set = abap_true.
+    IF lv_ready = abap_true.
       APPEND VALUE #( aufnr = ls_ord-aufnr auart = ls_ord-auart
                       iwerk = ls_ord-iwerk erdat = ls_ord-erdat
                       gstrp = ls_ord-gstrp gltrp = ls_ord-gltrp
-                      msgtxt = 'Ready to set KCMP' light = 'Y' ) TO gt_log.
+                      msgtxt = 'Ready to set KCMP'
+                      light  = icon_led_yellow ) TO gt_log.
     ELSE.
       APPEND VALUE #( aufnr = ls_ord-aufnr auart = ls_ord-auart
                       iwerk = ls_ord-iwerk erdat = ls_ord-erdat
                       gstrp = ls_ord-gstrp gltrp = ls_ord-gltrp
-                      msgtxt = 'Incomplete components' light = 'R' ) TO gt_log.
+                      msgtxt = 'Incomplete components'
+                      light  = icon_led_red ) TO gt_log.
     ENDIF.
   ENDLOOP.
 ENDFORM.
@@ -168,19 +156,15 @@ FORM check_authorizations.
   AUTHORITY-CHECK OBJECT 'C_AFKO_ACT' ID 'PS_ACTVT' FIELD '02'.
   IF sy-subrc <> 0.
     gv_user_authorized = abap_false.
-    LOOP AT gt_log INTO DATA(ls_log).
-      ls_log-msgtype = 'E'.
-      ls_log-msgid   = 'ZKCMP_MSG'.
-      ls_log-msgno   = '001'.
-      ls_log-msgtxt  = 'User not authorized to change orders.'.
-      ls_log-light   = 'R'.
-      MODIFY gt_log FROM ls_log.
+    LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
+      <fs_log>-msgtxt = 'User not authorized to change orders.'.
+      <fs_log>-light  = icon_led_red.
     ENDLOOP.
   ENDIF.
 ENDFORM.
 
 *---------------------------------------------------------------------*
-* Update user status using BAPI (optimized)
+* Update user status using BAPI
 *---------------------------------------------------------------------*
 FORM update_user_status.
   IF gv_user_authorized = abap_false.
@@ -191,7 +175,6 @@ FORM update_user_status.
         lt_tj30t TYPE TABLE OF tj30t,
         lt_jest  TYPE TABLE OF jest.
 
-  " Prefetch JEST, JSTO, TJ30T
   SELECT objnr, stsma
     FROM jsto
     FOR ALL ENTRIES IN @gt_orders
@@ -213,48 +196,28 @@ FORM update_user_status.
       AND inact = @space
     INTO TABLE @lt_jest.
 
-  LOOP AT gt_log INTO DATA(ls_log) WHERE light = 'Y'.
+  LOOP AT gt_log INTO DATA(ls_log) WHERE light = icon_led_yellow.
     DATA(lv_action) = COND string( WHEN p_reset = abap_true THEN 'RESET' ELSE 'SET' ).
 
-    " Per-order plant authorization
     AUTHORITY-CHECK OBJECT 'I_IWERK'
       ID 'IWERK' FIELD ls_log-iwerk
       ID 'ACTVT' FIELD '02'.
     IF sy-subrc <> 0.
-      ls_log-msgtype = 'E'.
-      ls_log-msgid   = 'ZKCMP_MSG'.
-      ls_log-msgno   = '002'.
-      ls_log-msgtxt  = |User lacks authorization for plant { ls_log-iwerk }.|.
-      ls_log-light   = 'R'.
+      ls_log-msgtxt = |User not authorized for plant { ls_log-iwerk }|.
+      ls_log-light  = icon_led_red.
       MODIFY gt_log FROM ls_log.
       CONTINUE.
     ENDIF.
 
     READ TABLE lt_jsto INTO DATA(ls_jsto) WITH KEY objnr = ls_log-objnr.
-    IF sy-subrc <> 0 OR ls_jsto-stsma IS INITIAL.
-      ls_log-msgtxt = 'Cannot determine status profile.'.
-      ls_log-light  = 'R'.
-      MODIFY gt_log FROM ls_log.
-      CONTINUE.
-    ENDIF.
-
     READ TABLE lt_tj30t INTO DATA(ls_tj30t)
       WITH KEY stsma = ls_jsto-stsma txt04 = p_estat spras = p_spras.
-    IF sy-subrc <> 0.
-      ls_log-msgtxt = |User status { p_estat } not found.| .
-      ls_log-light  = 'R'.
-      MODIFY gt_log FROM ls_log.
-      CONTINUE.
-    ENDIF.
-
     READ TABLE lt_jest INTO DATA(ls_jest)
       WITH KEY objnr = ls_log-objnr stat = ls_tj30t-estat inact = space.
 
-    " Skip unnecessary updates
-    IF lv_action = 'SET' AND sy-subrc = 0.
-      CONTINUE.
-    ELSEIF lv_action = 'RESET' AND sy-subrc <> 0.
-      CONTINUE.
+    IF ( lv_action = 'SET' AND sy-subrc = 0 ) OR
+       ( lv_action = 'RESET' AND sy-subrc <> 0 ).
+      CONTINUE. " skip unnecessary updates
     ENDIF.
 
     DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
@@ -284,25 +247,16 @@ FORM update_user_status.
     READ TABLE lt_return INTO DATA(ls_ret) WITH KEY type = 'E'.
     IF sy-subrc = 0.
       CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-      ls_log-msgtype = 'E'.
-      ls_log-msgid   = ls_ret-id.
-      ls_log-msgno   = ls_ret-number.
-      ls_log-msgtxt  = ls_ret-message.
-      ls_log-light   = 'R'.
+      ls_log-msgtxt = ls_ret-message.
+      ls_log-light  = icon_led_red.
     ELSE.
       CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
       IF lv_action = 'SET'.
-        ls_log-msgid   = 'ZKCMP_MSG'.
-        ls_log-msgno   = '003'.
-        ls_log-msgtype = 'S'.
-        ls_log-msgtxt  = |Order user status set to { p_estat }.|.
+        ls_log-msgtxt = |Order user status set to { p_estat }|.
       ELSE.
-        ls_log-msgid   = 'ZKCMP_MSG'.
-        ls_log-msgno   = '004'.
-        ls_log-msgtype = 'S'.
-        ls_log-msgtxt  = |Order user status { p_estat } reset.|.
+        ls_log-msgtxt = |Order user status { p_estat } reset.|.
       ENDIF.
-      ls_log-light = 'G'.
+      ls_log-light = icon_led_green.
     ENDIF.
 
     MODIFY gt_log FROM ls_log.
@@ -313,15 +267,19 @@ FORM update_user_status.
 ENDFORM.
 
 *---------------------------------------------------------------------*
-* Display log (ALV)
+* Display ALV with traffic light icons (Green/Yellow/Red)
 *---------------------------------------------------------------------*
 FORM display_execution_log.
+  DATA: lo_alv   TYPE REF TO cl_salv_table,
+        lo_cols  TYPE REF TO cl_salv_columns_table,
+        lo_func  TYPE REF TO cl_salv_functions,
+        lx_msg   TYPE REF TO cx_salv_msg.
+
   IF gt_log IS INITIAL.
     MESSAGE 'No orders processed.' TYPE 'I'.
     EXIT.
   ENDIF.
 
-  DATA(lo_alv) = NEW cl_salv_table( ).
   TRY.
       cl_salv_table=>factory(
         IMPORTING
@@ -329,13 +287,21 @@ FORM display_execution_log.
         CHANGING
           t_table      = gt_log ).
 
-      lo_alv->get_functions( )->set_all( abap_true ).
-      lo_alv->get_columns( )->set_optimize( abap_true ).
+      lo_func = lo_alv->get_functions( ).
+      lo_func->set_all( abap_true ).
+
+      lo_cols = lo_alv->get_columns( ).
+      lo_cols->set_optimize( abap_true ).
+
+      DATA(lo_col) = lo_cols->get_column( 'LIGHT' ).
+      lo_col->set_icon( abap_true ).
+      lo_col->set_short_text( ' ' ).
+      lo_col->set_medium_text( 'Result' ).
+      lo_col->set_long_text( 'Processing Result' ).
+
       lo_alv->display( ).
-    CATCH cx_salv_msg.
-      LOOP AT gt_log INTO DATA(ls_log).
-        WRITE: / ls_log-aufnr, ls_log-msgtxt.
-      ENDLOOP.
+    CATCH cx_salv_msg INTO lx_msg.
+      MESSAGE lx_msg->get_text( ) TYPE 'I'.
   ENDTRY.
 ENDFORM.
 
