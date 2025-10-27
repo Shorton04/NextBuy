@@ -1,8 +1,35 @@
-*&---------------------------------------------------------------------*
-*& Report  ZTR_A2D_REV_RECOG_CONSMAT
-*&---------------------------------------------------------------------*
-REPORT ztr_a2d_rev_recog_consmat.
+* ====================================================================
+* RICEFW ID.........: 7281
+* TR Number.........: D30K906626
+* Version...........: 1.0
+* Program...........: ZTR_A2R_KCMP_STATUS
+* Transaction Code..: SE38
+* Author............: HQ75177
+* Date..............: 21.10.2025
+* --------------------------------------------------------------------
+* Description.......: Set / Reset KCMP user status
+*                          for PM Orders (Kitting)
+* --------------------------------------------------------------------
+* Modification list.:
+* Date          Author    TR Number          Description
+* 21.10.2025   HQ75177    D30K906728    Separate form for dequeue functions.V2
+* ====================================================================
+REPORT ztr_a2r_kcmp_status.
 
-INCLUDE ztr_a2d_rev_recog_consmat_top.   "Global Data Declarations
-INCLUDE ztr_a2d_rev_recog_consmat_sel.   "Selection Screen
-INCLUDE ztr_a2d_rev_recog_consmat_f01.   "Forms / Subroutines
+INCLUDE ztr_a2r_kcmp_status_top.
+INCLUDE ztr_a2r_kcmp_status_sel.
+INCLUDE ztr_a2r_kcmp_status_f01.
+
+INITIALIZATION.
+  PERFORM init_defaults.
+
+START-OF-SELECTION.
+  PERFORM get_kcmp_status.
+  PERFORM validate_selection.
+  PERFORM fetch_orders.
+  PERFORM filter_by_jest.
+  PERFORM filter_has_components.
+  PERFORM evaluate_kitting.
+  PERFORM check_authorizations.
+  PERFORM update_user_status.
+  PERFORM display_execution_log.
