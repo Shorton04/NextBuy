@@ -1,0 +1,98 @@
+************************************************************************
+* Program ..: ZMVI0125                                                 *
+*                                                                      *
+* Author ...: Venkatrao Gallabatti                                     *
+* Created ..: June 2023                                                *
+* Details                                                              *
+* -------                                                              *
+*             Set / reset KCMP user status                             *
+************************************************************************
+REPORT zmvi0125.
+
+DATA: go_controller     TYPE REF TO zcl_rfw_controller,
+      go_cbc_model_view TYPE REF TO zcl_zmvi0125,
+      gs_parameter      TYPE zcl_zmvi0125=>ts_parameter.
+TABLES:           diaufk, viaufkst, rihea, caufvd.
+
+SELECTION-SCREEN  BEGIN OF SCREEN 0100 AS SUBSCREEN.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-s01.
+SELECT-OPTIONS:
+r_aufnr      FOR    diaufk-aufnr MATCHCODE OBJECT ordp,
+r_auart      FOR    diaufk-auart,
+r_iwerk      FOR    caufvd-iwerk,
+r_erdat      FOR    viaufkst-erdat,
+r_stai1      FOR    rihea-i_astatin  MATCHCODE OBJECT i_status,
+r_stae1      FOR    rihea-i_astatex  MATCHCODE OBJECT i_status,
+r_gstrp      FOR    viaufkst-gstrp,
+r_gltrp      FOR    viaufkst-gltrp.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-s02.
+PARAMETERS v_reserv AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS  v_p_pr   AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN COMMENT 3(35) text-s04.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN END OF BLOCK b2.
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-s03.
+PARAMETERS: v_estat TYPE tj30-estat DEFAULT 'KCMP',
+            v_spras TYPE spras DEFAULT 'E' OBLIGATORY,
+            v_set   RADIOBUTTON GROUP r1 DEFAULT 'X' USER-COMMAND u1,
+            v_reset RADIOBUTTON GROUP r1.
+SELECTION-SCREEN END OF BLOCK b3.
+SELECTION-SCREEN END OF SCREEN 0100.
+
+INITIALIZATION.
+
+  r_stai1-sign = 'I'.
+  r_stai1-option = 'EQ'.
+  r_stai1-low =  'REL'.
+  APPEND r_stai1.
+
+  r_stae1-sign = 'I'.
+  r_stae1-option = 'EQ'.
+  r_stae1-low =  'NMAT'.
+  APPEND r_stae1.
+
+  r_stae1-sign = 'I'.
+  r_stae1-option = 'EQ'.
+  r_stae1-low =  'LKD'.
+  APPEND r_stae1.
+
+
+  CREATE OBJECT go_cbc_model_view.
+  CALL FUNCTION 'ZRFW_CONTROLLER_M01_V01_L02'
+    EXPORTING
+      iv_parameter_struct_name = 'ZCL_ZMVI0125=>TS_PARAMETER'
+      iv_result_struct_name    = 'ZCL_ZMVI0125=>TS_RESULT'
+      io_view_report           = go_cbc_model_view
+      io_view_alv              = go_cbc_model_view
+      io_model_selection       = go_cbc_model_view
+      iv_report_id             = sy-repid
+      iv_parameter_subscr_id   = '0100'
+    IMPORTING
+      eo_controller            = go_controller.
+
+  ASSERT go_controller IS BOUND.
+
+  IF go_controller IS BOUND.
+    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
+    go_controller->on_selection_screen_output( CHANGING cs_parameter = gs_parameter ).
+    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
+  ENDIF.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-name = 'V_SPRAS'.
+      screen-input = 0.
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+
+AT SELECTION-SCREEN.
+
+  IF go_controller IS BOUND.
+    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
+    go_controller->on_selection_screen( CHANGING cs_parameter = gs_parameter ).
+    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
+  ENDIF.
