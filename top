@@ -1,8 +1,8 @@
-*&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_TOP
-*&---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* Include ZTR_A2R_KCMP_STATUS_TOP
+*---------------------------------------------------------------------*
 
-TABLES: aufk, afih, afko, jest, jsto, resb.
+TABLES: aufk, afih, afko, jest, resb, jsto, tj30, tj30t.
 
 "--------------------------------------------------------------------*
 " Type Definitions
@@ -18,26 +18,26 @@ TYPES: BEGIN OF lty_order,
        END OF lty_order.
 
 TYPES: BEGIN OF lty_log,
-         aufnr  TYPE aufk-aufnr,
-         auart  TYPE aufk-auart,
-         iwerk  TYPE afih-iwerk,
-         msgtxt TYPE string,
-         light  TYPE char1,  " G/Y/R indicator
+         aufnr    TYPE aufk-aufnr,
+         auart    TYPE aufk-auart,
+         iwerk    TYPE afih-iwerk,
+         erdat    TYPE aufk-erdat,
+         gstrp    TYPE afko-gstrp,
+         gltrp    TYPE afko-gltrp,
+         msgtype  TYPE char1,
+         msgid    TYPE symsgid,
+         msgno    TYPE symsgno,
+         msgtxt   TYPE string,
+         light    TYPE icon_d,
        END OF lty_log.
 
-"--------------------------------------------------------------------*
-" Global Data
-"--------------------------------------------------------------------*
 DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
       gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY.
 
-DATA: gv_user  TYPE sy-uname,
-      gv_now   TYPE sy-datum,
-      gc_estat TYPE tj30-estat.  " internal KCMP code resolved dynamically
+DATA: gv_user            TYPE sy-uname,
+      gv_now             TYPE sy-datum,
+      gv_user_authorized TYPE abap_bool VALUE abap_true.
 
-"--------------------------------------------------------------------*
-" Constants
-"--------------------------------------------------------------------*
 CONSTANTS:
-  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
-  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
+  gc_postp_l TYPE char1 VALUE 'L',
+  gc_postp_n TYPE char1 VALUE 'N'.
