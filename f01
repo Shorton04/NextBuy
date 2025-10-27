@@ -1,313 +1,143 @@
 *---------------------------------------------------------------------*
-* Include ZTR_A2R_KCMP_STATUS_F01
+* Filter by status (inclusive/exclusive) — Join version
 *---------------------------------------------------------------------*
+FORM filter_by_jest.
 
-FORM init_defaults.
-  gv_user = sy-uname.
-  gv_now  = sy-datum.
-ENDFORM.
+  DATA lt_keep TYPE TABLE OF lty_order.
 
-*---------------------------------------------------------------------*
-* Validate selection
-*---------------------------------------------------------------------*
-FORM validate_selection.
-  IF s_aufnr[] IS INITIAL AND s_iwerk[] IS INITIAL.
-    MESSAGE 'Please enter at least one order or plant.' TYPE 'E'.
-  ENDIF.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Fetch Orders using optimized join (S/4HANA)
-*---------------------------------------------------------------------*
-FORM fetch_orders.
-  CLEAR gt_orders.
-
-  SELECT a~aufnr, a~auart, b~iwerk, a~erdat, c~gstrp, c~gltrp, a~objnr
+  SELECT DISTINCT a~aufnr,
+                  a~auart,
+                  b~iwerk,
+                  a~erdat,
+                  c~gstrp,
+                  c~gltrp,
+                  a~objnr
     FROM aufk AS a
     INNER JOIN afih AS b ON a~aufnr = b~aufnr
     INNER JOIN afko AS c ON a~aufnr = c~aufnr
-    INNER JOIN jsto AS d ON a~objnr = d~objnr
-    WHERE a~aufnr IN @s_aufnr
-      AND a~auart IN @s_auart
+    INNER JOIN jest AS j ON a~objnr = j~objnr
+    WHERE j~inact = @space
+      AND j~stat IN @s_statin          " inclusive statuses
+      AND j~stat NOT IN @s_statex      " exclusive statuses
+      AND a~aufnr IN @s_aufnr
       AND b~iwerk IN @s_iwerk
-      AND a~erdat IN @s_erdat
-      AND c~gstrp IN @s_gstrp
-      AND c~gltrp IN @s_gltrp
-      AND d~stsma IS NOT INITIAL
-    INTO TABLE @gt_orders.
+    INTO TABLE @lt_keep.
 
-  IF gt_orders IS INITIAL.
-    MESSAGE 'No orders found for selection criteria.' TYPE 'I'.
-  ENDIF.
+  gt_orders = lt_keep.
+
 ENDFORM.
 
-*---------------------------------------------------------------------*
-* Filter by status (inclusive/exclusive)
-*---------------------------------------------------------------------*
-FORM filter_by_jest.
-  DATA lt_jest TYPE TABLE OF jest.
 
-  SELECT objnr, stat, inact
-    FROM jest
-    FOR ALL ENTRIES IN @gt_orders
-    WHERE objnr = @gt_orders-objnr
-    INTO TABLE @lt_jest.
 
-  DELETE gt_orders WHERE objnr NOT IN (
-    SELECT objnr FROM @lt_jest AS j
-      WHERE j~inact = @space
-        AND j~stat IN @s_statin
-  ).
 
-  DELETE gt_orders WHERE objnr IN (
-    SELECT objnr FROM @lt_jest AS j
-      WHERE j~inact = @space
-        AND j~stat IN @s_statex
-  ).
-ENDFORM.
 
 *---------------------------------------------------------------------*
-* Filter only orders having components
+* Filter only orders having active components — Join version
 *---------------------------------------------------------------------*
 FORM filter_has_components.
-  DATA lt_resb TYPE TABLE OF resb.
 
-  SELECT DISTINCT aufnr
-    FROM resb
-    WHERE xloek = @space
-    INTO TABLE @lt_resb.
+  DATA lt_keep TYPE TABLE OF lty_order.
 
-  DELETE gt_orders WHERE aufnr NOT IN (
-    SELECT aufnr FROM @lt_resb
-  ).
+  SELECT a~aufnr,
+         a~auart,
+         b~iwerk,
+         a~erdat,
+         c~gstrp,
+         c~gltrp,
+         a~objnr
+    FROM aufk AS a
+    INNER JOIN afih AS b ON a~aufnr = b~aufnr
+    INNER JOIN afko AS c ON a~aufnr = c~aufnr
+    WHERE EXISTS (
+      SELECT 1 FROM resb AS r
+        WHERE r~aufnr = a~aufnr
+          AND r~xloek = @space )
+      AND a~aufnr IN @s_aufnr
+    INTO TABLE @lt_keep.
+
+  gt_orders = lt_keep.
+
 ENDFORM.
 
+
+
 *---------------------------------------------------------------------*
-* Evaluate kitting completeness (Green/Yellow/Red logic)
+* Evaluate kitting completeness using join (S/4HANA optimized)
 *---------------------------------------------------------------------*
 FORM evaluate_kitting.
-  DATA lt_resb TYPE TABLE OF resb.
 
-  SELECT aufnr, postp, enmng, bdmng, xloek
-    FROM resb
-    FOR ALL ENTRIES IN @gt_orders
-    WHERE aufnr = @gt_orders-aufnr
-      AND xloek = @space
-    INTO TABLE @lt_resb.
+  DATA lt_comp TYPE TABLE OF resb.
 
-  SORT lt_resb BY aufnr.
+  SELECT a~aufnr,
+         a~auart,
+         b~iwerk,
+         a~erdat,
+         c~gstrp,
+         c~gltrp,
+         r~postp,
+         r~enmng,
+         r~bdmng
+    FROM aufk AS a
+    INNER JOIN afih AS b ON a~aufnr = b~aufnr
+    INNER JOIN afko AS c ON a~aufnr = c~aufnr
+    INNER JOIN resb AS r ON a~aufnr = r~aufnr
+    WHERE a~aufnr IN @s_aufnr
+      AND r~xloek = @space
+    INTO TABLE @lt_comp.
 
   LOOP AT gt_orders INTO DATA(ls_ord).
-    DATA(lt_comp) = VALUE #( FOR r IN lt_resb WHERE ( aufnr = ls_ord-aufnr ) ( r ) ).
-    IF lt_comp IS INITIAL.
-      CONTINUE.
-    ENDIF.
-
     DATA(lv_l_complete) = abap_true.
     DATA(lv_n_complete) = abap_true.
+    DATA(lv_ready) = abap_false.
 
-    IF p_reserv = abap_true.
-      LOOP AT lt_comp INTO DATA(ls_l) WHERE postp = 'L'.
-        IF ls_l-enmng < ls_l-bdmng.
+    LOOP AT lt_comp INTO DATA(ls_r)
+         WHERE aufnr = ls_ord-aufnr.
+
+      IF ls_r-postp = gc_postp_l AND p_reserv = abap_true.
+        IF ls_r-enmng < ls_r-bdmng.
           lv_l_complete = abap_false.
           EXIT.
         ENDIF.
-      ENDLOOP.
-    ENDIF.
+      ENDIF.
 
-    IF p_preq = abap_true.
-      LOOP AT lt_comp INTO DATA(ls_n) WHERE postp = 'N'.
-        IF ls_n-enmng < ls_n-bdmng.
+      IF ls_r-postp = gc_postp_n AND p_preq = abap_true.
+        IF ls_r-enmng < ls_r-bdmng.
           lv_n_complete = abap_false.
           EXIT.
         ENDIF.
-      ENDLOOP.
-    ENDIF.
+      ENDIF.
+    ENDLOOP.
 
-    DATA(lv_ready) = abap_false.
+    " Determine readiness
     IF ( p_reserv = abap_true AND p_preq = abap_true AND
          lv_l_complete = abap_true AND lv_n_complete = abap_true )
-      OR ( p_reserv = abap_true AND p_preq = abap_false AND lv_l_complete = abap_true )
-      OR ( p_reserv = abap_false AND p_preq = abap_true AND lv_n_complete = abap_true )
-      OR ( p_reserv = abap_false AND p_preq = abap_false ).
+     OR ( p_reserv = abap_true AND p_preq = abap_false AND lv_l_complete = abap_true )
+     OR ( p_reserv = abap_false AND p_preq = abap_true AND lv_n_complete = abap_true )
+     OR ( p_reserv = abap_false AND p_preq = abap_false ).
       lv_ready = abap_true.
     ENDIF.
 
     IF lv_ready = abap_true.
-      APPEND VALUE #( aufnr = ls_ord-aufnr auart = ls_ord-auart
-                      iwerk = ls_ord-iwerk erdat = ls_ord-erdat
-                      gstrp = ls_ord-gstrp gltrp = ls_ord-gltrp
-                      msgtxt = 'Ready to set KCMP'
-                      light  = icon_led_yellow ) TO gt_log.
+      APPEND VALUE lty_log(
+        aufnr  = ls_ord-aufnr
+        auart  = ls_ord-auart
+        iwerk  = ls_ord-iwerk
+        erdat  = ls_ord-erdat
+        gstrp  = ls_ord-gstrp
+        gltrp  = ls_ord-gltrp
+        msgtxt = 'Ready to set KCMP'
+        light  = icon_led_yellow ) TO gt_log.
     ELSE.
-      APPEND VALUE #( aufnr = ls_ord-aufnr auart = ls_ord-auart
-                      iwerk = ls_ord-iwerk erdat = ls_ord-erdat
-                      gstrp = ls_ord-gstrp gltrp = ls_ord-gltrp
-                      msgtxt = 'Incomplete components'
-                      light  = icon_led_red ) TO gt_log.
+      APPEND VALUE lty_log(
+        aufnr  = ls_ord-aufnr
+        auart  = ls_ord-auart
+        iwerk  = ls_ord-iwerk
+        erdat  = ls_ord-erdat
+        gstrp  = ls_ord-gstrp
+        gltrp  = ls_ord-gltrp
+        msgtxt = 'Incomplete components'
+        light  = icon_led_red ) TO gt_log.
     ENDIF.
   ENDLOOP.
-ENDFORM.
 
-*---------------------------------------------------------------------*
-* Authorization checks
-*---------------------------------------------------------------------*
-FORM check_authorizations.
-  AUTHORITY-CHECK OBJECT 'C_AFKO_ACT' ID 'PS_ACTVT' FIELD '02'.
-  IF sy-subrc <> 0.
-    gv_user_authorized = abap_false.
-    LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
-      <fs_log>-msgtxt = 'User not authorized to change orders.'.
-      <fs_log>-light  = icon_led_red.
-    ENDLOOP.
-  ENDIF.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Update user status using BAPI
-*---------------------------------------------------------------------*
-FORM update_user_status.
-  IF gv_user_authorized = abap_false.
-    RETURN.
-  ENDIF.
-
-  DATA: lt_jsto  TYPE TABLE OF jsto,
-        lt_tj30t TYPE TABLE OF tj30t,
-        lt_jest  TYPE TABLE OF jest.
-
-  SELECT objnr, stsma
-    FROM jsto
-    FOR ALL ENTRIES IN @gt_orders
-    WHERE objnr = @gt_orders-objnr
-    INTO TABLE @lt_jsto.
-
-  SELECT j~stsma, j~estat, t~txt04, t~spras
-    FROM tj30 AS j
-    INNER JOIN tj30t AS t
-      ON j~stsma = t~stsma AND j~estat = t~estat
-    WHERE t~txt04 = @p_estat
-      AND t~spras = @p_spras
-    INTO TABLE @lt_tj30t.
-
-  SELECT objnr, stat, inact
-    FROM jest
-    FOR ALL ENTRIES IN @gt_orders
-    WHERE objnr = @gt_orders-objnr
-      AND inact = @space
-    INTO TABLE @lt_jest.
-
-  LOOP AT gt_log INTO DATA(ls_log) WHERE light = icon_led_yellow.
-    DATA(lv_action) = COND string( WHEN p_reset = abap_true THEN 'RESET' ELSE 'SET' ).
-
-    AUTHORITY-CHECK OBJECT 'I_IWERK'
-      ID 'IWERK' FIELD ls_log-iwerk
-      ID 'ACTVT' FIELD '02'.
-    IF sy-subrc <> 0.
-      ls_log-msgtxt = |User not authorized for plant { ls_log-iwerk }|.
-      ls_log-light  = icon_led_red.
-      MODIFY gt_log FROM ls_log.
-      CONTINUE.
-    ENDIF.
-
-    READ TABLE lt_jsto INTO DATA(ls_jsto) WITH KEY objnr = ls_log-objnr.
-    READ TABLE lt_tj30t INTO DATA(ls_tj30t)
-      WITH KEY stsma = ls_jsto-stsma txt04 = p_estat spras = p_spras.
-    READ TABLE lt_jest INTO DATA(ls_jest)
-      WITH KEY objnr = ls_log-objnr stat = ls_tj30t-estat inact = space.
-
-    IF ( lv_action = 'SET' AND sy-subrc = 0 ) OR
-       ( lv_action = 'RESET' AND sy-subrc <> 0 ).
-      CONTINUE. " skip unnecessary updates
-    ENDIF.
-
-    DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
-          lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
-          lt_methods TYPE TABLE OF bapi_alm_order_method,
-          lt_return  TYPE TABLE OF bapiret2.
-
-    APPEND VALUE #( orderid = ls_log-aufnr ) TO lt_header.
-
-    IF lv_action = 'SET'.
-      APPEND VALUE #( user_st_text = p_estat langu = p_spras ) TO lt_status.
-    ELSE.
-      APPEND VALUE #( user_st_text = p_estat langu = p_spras inactive = abap_true ) TO lt_status.
-    ENDIF.
-
-    APPEND VALUE #( refnumber = '00001' objecttype = 'HEADER'     method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
-    APPEND VALUE #( refnumber = '00001' objecttype = 'USERSTATUS' method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
-    APPEND VALUE #( refnumber = '00003' objecttype = 'ORDER'      method = 'SAVE'   objectkey = ls_log-aufnr ) TO lt_methods.
-
-    CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
-      TABLES
-        it_header     = lt_header
-        it_methods    = lt_methods
-        it_userstatus = lt_status
-        return        = lt_return.
-
-    READ TABLE lt_return INTO DATA(ls_ret) WITH KEY type = 'E'.
-    IF sy-subrc = 0.
-      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-      ls_log-msgtxt = ls_ret-message.
-      ls_log-light  = icon_led_red.
-    ELSE.
-      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
-      IF lv_action = 'SET'.
-        ls_log-msgtxt = |Order user status set to { p_estat }|.
-      ELSE.
-        ls_log-msgtxt = |Order user status { p_estat } reset.|.
-      ENDIF.
-      ls_log-light = icon_led_green.
-    ENDIF.
-
-    MODIFY gt_log FROM ls_log.
-    PERFORM release_locks USING ls_log-aufnr.
-  ENDLOOP.
-
-  COMMIT WORK.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Display ALV with traffic light icons (Green/Yellow/Red)
-*---------------------------------------------------------------------*
-FORM display_execution_log.
-  DATA: lo_alv   TYPE REF TO cl_salv_table,
-        lo_cols  TYPE REF TO cl_salv_columns_table,
-        lo_func  TYPE REF TO cl_salv_functions,
-        lx_msg   TYPE REF TO cx_salv_msg.
-
-  IF gt_log IS INITIAL.
-    MESSAGE 'No orders processed.' TYPE 'I'.
-    EXIT.
-  ENDIF.
-
-  TRY.
-      cl_salv_table=>factory(
-        IMPORTING
-          r_salv_table = lo_alv
-        CHANGING
-          t_table      = gt_log ).
-
-      lo_func = lo_alv->get_functions( ).
-      lo_func->set_all( abap_true ).
-
-      lo_cols = lo_alv->get_columns( ).
-      lo_cols->set_optimize( abap_true ).
-
-      DATA(lo_col) = lo_cols->get_column( 'LIGHT' ).
-      lo_col->set_icon( abap_true ).
-      lo_col->set_short_text( ' ' ).
-      lo_col->set_medium_text( 'Result' ).
-      lo_col->set_long_text( 'Processing Result' ).
-
-      lo_alv->display( ).
-    CATCH cx_salv_msg INTO lx_msg.
-      MESSAGE lx_msg->get_text( ) TYPE 'I'.
-  ENDTRY.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Release locks
-*---------------------------------------------------------------------*
-FORM release_locks USING p_aufnr TYPE aufk-aufnr.
-  CALL FUNCTION 'DEQUEUE_ALL'.
 ENDFORM.
