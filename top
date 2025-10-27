@@ -1,42 +1,45 @@
 *---------------------------------------------------------------------*
 * Include ZTR_A2R_KCMP_STATUS_TOP
-* (global types, constants and data used by all includes)
+* Global types, constants, and data used by all includes
 *---------------------------------------------------------------------*
 
 TABLES: aufk, afih, afko, jest, resb, jsto, tj30, tj30t.
+
+INCLUDE <icon>. " For LED / traffic-light icons
 
 "--------------------------------------------------------------------*
 " Type Definitions
 "--------------------------------------------------------------------*
 TYPES: BEGIN OF lty_order,
-         aufnr TYPE aufk-aufnr,
-         auart TYPE aufk-auart,
-         iwerk TYPE afih-iwerk,
-         erdat TYPE aufk-erdat,
-         gstrp TYPE afko-gstrp,
-         gltrp TYPE afko-gltrp,
-         objnr TYPE aufk-objnr,
+         aufnr TYPE aufk-aufnr,    " Order Number
+         auart TYPE aufk-auart,    " Order Type
+         iwerk TYPE afih-iwerk,    " Plant
+         erdat TYPE aufk-erdat,    " Created On
+         gstrp TYPE afko-gstrp,    " Basic Start
+         gltrp TYPE afko-gltrp,    " Basic Finish
+         objnr TYPE aufk-objnr,    " Object Number
        END OF lty_order.
 
 TYPES: BEGIN OF lty_log,
-         aufnr    TYPE aufk-aufnr,
-         auart    TYPE aufk-auart,
-         iwerk    TYPE afih-iwerk,
-         erdat    TYPE aufk-erdat,
-         gstrp    TYPE afko-gstrp,
-         gltrp    TYPE afko-gltrp,
-         msgtype  TYPE char1,      " 'I','E','S'...
-         msgid    TYPE char20,
-         msgno    TYPE char10,
-         msgtxt   TYPE string,
-         light    TYPE char20,     " will hold 'G'/'Y'/'R' then icon constants
+         aufnr    TYPE aufk-aufnr, " Order Number
+         auart    TYPE aufk-auart, " Order Type
+         iwerk    TYPE afih-iwerk, " Plant
+         erdat    TYPE aufk-erdat, " Created On
+         gstrp    TYPE afko-gstrp, " Basic Start
+         gltrp    TYPE afko-gltrp, " Basic Finish
+         msgtype  TYPE char1,      " Message type (I/E/S)
+         msgid    TYPE char20,     " Message ID
+         msgno    TYPE char10,     " Message number
+         msgtxt   TYPE string,     " Message text
+         light    TYPE icon_d,     " Traffic light icon
        END OF lty_log.
 
 "--------------------------------------------------------------------*
 " Global internal tables / variables
 "--------------------------------------------------------------------*
 DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
-      gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY.
+      gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY,
+      gs_log    TYPE lty_log.
 
 DATA: gv_user            TYPE sy-uname,
       gv_now             TYPE sy-datum,
@@ -46,8 +49,13 @@ DATA: gv_user            TYPE sy-uname,
 " Constants
 "--------------------------------------------------------------------*
 CONSTANTS:
-  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
-  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
+  gc_postp_l     TYPE char1 VALUE 'L',                 " Stock component
+  gc_postp_n     TYPE char1 VALUE 'N',                 " Non-stock component
+  gc_light_green TYPE icon_d VALUE icon_led_green,     " Complete
+  gc_light_red   TYPE icon_d VALUE icon_led_red,       " Incomplete
+  gc_light_inact TYPE icon_d VALUE icon_led_inactive.  " Default/Unknown
 
-" KCMP internal status resolved dynamically (filled by get_kcmp_status)
+"--------------------------------------------------------------------*
+" Dynamic KCMP status resolved at runtime
+"--------------------------------------------------------------------*
 DATA: gc_estat TYPE tj30-estat.
