@@ -1,60 +1,66 @@
-CLASS cl_salv_columns DEFINITION
-  PUBLIC
-  INHERITING FROM cl_salv_metadata_base
-  CREATE PUBLIC
+*---------------------------------------------------------------------*
+* FORM display_execution_log (universal SALV-compatible)
+*---------------------------------------------------------------------*
+FORM display_execution_log.
 
-  GLOBAL FRIENDS if_salv_gui_om_metadata_friend
-                 cl_salv_adapter
-                 cl_salv_controller
-                 cl_salv_service_layout_db .
+  DATA: lo_alv   TYPE REF TO cl_salv_table,
+        lo_cols  TYPE REF TO cl_salv_columns_table,
+        lo_func  TYPE REF TO cl_salv_functions,
+        lx_msg   TYPE REF TO cx_salv_msg,
+        lx_nf    TYPE REF TO cx_salv_not_found.
 
-*"* public components of class CL_SALV_COLUMNS
-*"* do not include other source files here!!!
-  PUBLIC SECTION.
+  IF gt_log IS INITIAL.
+    MESSAGE 'No orders processed.' TYPE 'I'.
+    EXIT.
+  ENDIF.
 
-    CLASS cl_salv_ddic_apply DEFINITION LOAD .
-    CONSTANTS c_apply_ddic_by_columnname TYPE salv_de_constant VALUE cl_salv_ddic_apply=>c_apply_ddic_by_columnname. "#EC NOTEXT
-    CONSTANTS c_apply_ddic_by_rollname TYPE salv_de_constant VALUE cl_salv_ddic_apply=>c_apply_ddic_by_rollname. "#EC NOTEXT
-    CONSTANTS c_apply_ddic_by_domain TYPE salv_de_constant VALUE cl_salv_ddic_apply=>c_apply_ddic_by_domain. "#EC NOTEXT
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = lo_alv
+        CHANGING
+          t_table      = gt_log ).
 
-    METHODS create_columns
-      IMPORTING
-        !r_table TYPE REF TO data.
+      lo_func = lo_alv->get_functions( ).
+      lo_func->set_all( abap_true ).
 
-    METHODS apply_ddic_structure
-      IMPORTING
-        !name         TYPE any
-        !apply_method TYPE i DEFAULT c_apply_ddic_by_columnname .
-    METHODS constructor
-      IMPORTING
-        !r_data         TYPE REF TO data
-        !r_controller   TYPE REF TO if_salv_controller_metadata OPTIONAL.
-    METHODS get
-      RETURNING
-        VALUE(value) TYPE salv_t_column_ref .
-    METHODS get_column
-      IMPORTING
-        !columnname  TYPE lvc_fname
-      RETURNING
-        VALUE(value) TYPE REF TO cl_salv_column
-      RAISING
-        cx_salv_not_found .
-    METHODS get_column_position
-      IMPORTING
-        !columnname  TYPE lvc_fname
-      RETURNING
-        VALUE(value) TYPE i
-      RAISING
-        cx_salv_not_found .
-    METHODS is_optimized
-      RETURNING
-        VALUE(value) TYPE sap_bool .
-    METHODS set_column_position
-      IMPORTING
-        !columnname TYPE lvc_fname
-        !position   TYPE i OPTIONAL .
-    METHODS set_optimize
-      IMPORTING
-        !value TYPE sap_bool DEFAULT if_salv_c_bool_sap~true .
-*"* protected components of class CL_SALV_COLUMNS
-*"* do not include other source files here!!!
+      lo_cols = lo_alv->get_columns( ).
+      lo_cols->set_optimize( abap_true ).
+
+      "--------------------------------------------------------------*
+      " Replace flag letters with LED icons (SALV auto renders @xx@)
+      "--------------------------------------------------------------*
+      LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
+        CASE <fs_log>-light.
+          WHEN 'G'. <fs_log>-light = icon_led_green.
+          WHEN 'Y'. <fs_log>-light = icon_led_yellow.
+          WHEN 'R'. <fs_log>-light = icon_led_red.
+          WHEN OTHERS. <fs_log>-light = icon_led_inactive.
+        ENDCASE.
+      ENDLOOP.
+
+      "--------------------------------------------------------------*
+      " Optional: rename column headers
+      "--------------------------------------------------------------*
+      TRY.
+          DATA(lo_col_light) = lo_cols->get_column( 'LIGHT' ).
+          lo_col_light->set_medium_text( 'Result' ).
+          lo_col_light->set_long_text( 'Processing Result' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          DATA(lo_col_msg) = lo_cols->get_column( 'MSGTXT' ).
+          lo_col_msg->set_medium_text( 'Status Message' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      lo_alv->display( ).
+
+    CATCH cx_salv_not_found INTO lx_nf.
+      MESSAGE lx_nf->get_text( ) TYPE 'I'.
+    CATCH cx_salv_msg INTO lx_msg.
+      MESSAGE lx_msg->get_text( ) TYPE 'I'.
+  ENDTRY.
+
+ENDFORM.
