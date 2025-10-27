@@ -1,26 +1,43 @@
 *&---------------------------------------------------------------------*
-*& Include  ZTR_A2D_REV_RECOG_CONSMAT_TOP
+*& Include ZTR_A2R_KCMP_STATUS_TOP
 *&---------------------------------------------------------------------*
 
-TABLES: mara, afpo, rsapetdtl, prps, zkcgt_wbs_recog.
+TABLES: aufk, afih, afko, jest, jsto, resb.
 
-DATA: go_controller TYPE REF TO zcl_a2d_controller,
-      go_model_view TYPE REF TO zcl_a2d_revenue_recog_consmat,
-      gs_parameter  TYPE zcl_a2d_revenue_recog_consmat=>ts_parameter,
-      ls_bdcdata    TYPE bdcdata.
+"--------------------------------------------------------------------*
+" Type Definitions
+"--------------------------------------------------------------------*
+TYPES: BEGIN OF lty_order,
+         aufnr TYPE aufk-aufnr,
+         auart TYPE aufk-auart,
+         iwerk TYPE afih-iwerk,
+         erdat TYPE aufk-erdat,
+         gstrp TYPE afko-gstrp,
+         gltrp TYPE afko-gltrp,
+         objnr TYPE aufk-objnr,
+       END OF lty_order.
 
-" Stored ranges/backups for selection-screen select-options (global ranges)
-DATA: gt_psphi  TYPE RANGE OF prps-psphi,
-      gt_pspnr  TYPE RANGE OF prps-pspnr,
-      gt_werks  TYPE RANGE OF afpo-dwerk,
-      gt_charg  TYPE RANGE OF afpo-charg,
-      gt_matnr  TYPE RANGE OF mara-matnr,
-      gt_mtart  TYPE RANGE OF mara-mtart,
-      gt_exdate TYPE RANGE OF rsapetdtl-extraction_date,
-      gt_amtsr  TYPE RANGE OF zkcgt_wbs_recog-amount_source,
-      gt_ernam  TYPE RANGE OF zkcgt_wbs_recog-ernam,
-      gt_erdat  TYPE RANGE OF zkcgt_wbs_recog-erdat,
-      gt_status TYPE RANGE OF zkcgt_wbs_recog-status.
+TYPES: BEGIN OF lty_log,
+         aufnr  TYPE aufk-aufnr,
+         auart  TYPE aufk-auart,
+         iwerk  TYPE afih-iwerk,
+         msgtxt TYPE string,
+         light  TYPE char1,  " G/Y/R indicator
+       END OF lty_log.
 
-" single flag parameter backup (global variable)
-DATA: lv_batrel TYPE flag.
+"--------------------------------------------------------------------*
+" Global Data
+"--------------------------------------------------------------------*
+DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
+      gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY.
+
+DATA: gv_user  TYPE sy-uname,
+      gv_now   TYPE sy-datum,
+      gc_estat TYPE tj30-estat.  " internal KCMP code resolved dynamically
+
+"--------------------------------------------------------------------*
+" Constants
+"--------------------------------------------------------------------*
+CONSTANTS:
+  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
+  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
