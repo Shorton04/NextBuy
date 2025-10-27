@@ -1,50 +1,66 @@
-*---------------------------------------------------------------------*
-* FORM display_execution_log
-*---------------------------------------------------------------------*
-FORM display_execution_log.
+FORM evaluate_kitting.
 
-  DATA: lo_alv  TYPE REF TO cl_salv_table,
-        lo_cols TYPE REF TO cl_salv_columns,
-        lo_col  TYPE REF TO cl_salv_column.
+  CLEAR gt_log.
 
-  TRY.
-      " Create ALV from internal table
-      cl_salv_table=>factory(
-        IMPORTING
-          r_salv_table = lo_alv
-        CHANGING
-          t_table      = gt_log ).
+  "--------------------------------------------------------------*
+  " 1. Read Orders using a JOIN (AUFK + AFIH + AFKO)
+  "--------------------------------------------------------------*
+  SELECT a~aufnr,
+         a~auart,
+         b~iwerk,
+         a~erdat,
+         c~gstrp,
+         c~gltrp,
+         a~objnr
+    FROM aufk AS a
+    INNER JOIN afih AS b ON a~aufnr = b~aufnr
+    INNER JOIN afko AS c ON a~aufnr = c~aufnr
+    WHERE a~aufnr IN @s_aufnr
+      AND a~auart IN @s_auart
+      AND b~iwerk IN @s_iwerk
+      AND a~erdat IN @s_erdat
+      AND c~gstrp IN @s_gstrp
+      AND c~gltrp IN @s_gltrp
+    INTO TABLE @gt_orders.
 
-      " Enable standard ALV functions
-      lo_alv->get_functions( )->set_all( abap_true ).
-      lo_alv->get_columns( )->set_optimize( abap_true ).
+  IF gt_orders IS INITIAL.
+    MESSAGE 'No orders found for selection criteria.' TYPE 'I'.
+    EXIT.
+  ENDIF.
 
-      "--------------------------------------------------------------*
-      " Set column headers and traffic light
-      "--------------------------------------------------------------*
-      lo_cols = lo_alv->get_columns( ).
+  "--------------------------------------------------------------*
+  " 2. Evaluate completeness of components (RESB)
+  "--------------------------------------------------------------*
+  LOOP AT gt_orders INTO DATA(ls_ord).
 
-      lo_cols->get_column( 'AUFNR' )->set_medium_text( 'Order' ).
-      lo_cols->get_column( 'AUART' )->set_medium_text( 'Order Type' ).
-      lo_cols->get_column( 'IWERK' )->set_medium_text( 'Plant' ).
-      lo_cols->get_column( 'ERDAT' )->set_medium_text( 'Created On' ).
-      lo_cols->get_column( 'GSTRP' )->set_medium_text( 'Basic Start' ).
-      lo_cols->get_column( 'GLTRP' )->set_medium_text( 'Basic Finish' ).
-      lo_cols->get_column( 'MSGTXT' )->set_medium_text( 'Status Message' ).
+    " Check component completeness using aggregation
+    SELECT COUNT(*) AS total,
+           SUM( CASE WHEN enmng < bdmng THEN 1 ELSE 0 END ) AS incomplete
+      FROM resb
+      WHERE aufnr = @ls_ord-aufnr
+        AND xloek = @space
+        AND postp IN ( @gc_postp_l, @gc_postp_n )
+      INTO @DATA(ls_comp).
 
-      lo_col = lo_cols->get_column( 'LIGHT' ).
-      lo_col->set_medium_text( 'Result' ).
-      lo_col->set_icon( abap_true ).
+    CLEAR gs_log.
+    MOVE-CORRESPONDING ls_ord TO gs_log.
 
-      "--------------------------------------------------------------*
-      " Display ALV output
-      "--------------------------------------------------------------*
-      lo_alv->display( ).
+    "------------------------------------------------------------*
+    " 3. Evaluate completeness and assign traffic light
+    "------------------------------------------------------------*
+    IF ls_comp-incomplete > 0.
+      gs_log-msgtxt = 'Incomplete components'.
+      gs_log-light  = gc_light_red.
+    ELSEIF ls_comp-total = 0.
+      gs_log-msgtxt = 'No components found'.
+      gs_log-light  = gc_light_inact.
+    ELSE.
+      gs_log-msgtxt = 'Kitting complete'.
+      gs_log-light  = gc_light_green.
+    ENDIF.
 
-    CATCH cx_salv_not_found INTO DATA(lx_nf).
-      MESSAGE lx_nf->get_text( ) TYPE 'E'.
-    CATCH cx_salv_msg INTO DATA(lx_msg).
-      MESSAGE lx_msg->get_text( ) TYPE 'E'.
-  ENDTRY.
+    APPEND gs_log TO gt_log.
+
+  ENDLOOP.
 
 ENDFORM.
