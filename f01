@@ -1,138 +1,60 @@
-************************************************************************
-*  INCLUDE ZTR_A2R_KCMP_STATUS_F01
-************************************************************************
-
 FORM evaluate_kitting.
 
-  DATA: lt_orders TYPE TABLE OF aufk,
-        lt_jest   TYPE TABLE OF jest.
+  CLEAR gt_log.
 
   "--------------------------------------------------------------*
-  " Select orders based on user input
+  " Single optimized read: AUFK + AFKO join
   "--------------------------------------------------------------*
-  SELECT aufnr
-         auart
-         iwerk
-         erdat
-    FROM aufk
-    INTO TABLE @lt_orders
-    WHERE aufnr IN @r_aufnr
-      AND auart IN @r_auart
-      AND iwerk IN @r_iwerk
-      AND erdat IN @r_erdat.
+  SELECT a~aufnr,
+         a~auart,
+         a~iwerk,
+         a~erdat,
+         b~gstrp,
+         b~gltrp
+    FROM aufk AS a
+    INNER JOIN afko AS b
+      ON a~aufnr = b~aufnr
+    WHERE a~aufnr IN @s_aufnr
+      AND a~auart IN @s_auart
+      AND a~iwerk IN @s_iwerk
+      AND a~erdat IN @s_erdat
+      AND b~gstrp IN @s_gstrp
+      AND b~gltrp IN @s_gltrp
+    INTO TABLE @DATA(lt_orders).
 
-  IF sy-subrc <> 0.
+  IF lt_orders IS INITIAL.
     MESSAGE 'No matching orders found.' TYPE 'I'.
     EXIT.
   ENDIF.
 
   "--------------------------------------------------------------*
-  " Read scheduling info (start/finish)
+  " Evaluate component completeness (still needs RESB check)
   "--------------------------------------------------------------*
-  SELECT aufnr
-         gstrp
-         gltrp
-    FROM afko
-    INTO TABLE @DATA(lt_afko)
-    FOR ALL ENTRIES IN @lt_orders
-    WHERE aufnr = @lt_orders-aufnr
-      AND gstrp IN @r_gstrp
-      AND gltrp IN @r_gltrp.
+  SELECT aufnr, SUM( CASE WHEN enmng < bdmng THEN 1 ELSE 0 END ) AS incomplete
+    FROM resb
+    WHERE aufnr IN @lt_orders
+      AND xloek = @space
+    GROUP BY aufnr
+    INTO TABLE @DATA(lt_resb).
 
-  "--------------------------------------------------------------*
-  " Combine order data and evaluate status
-  "--------------------------------------------------------------*
-  LOOP AT lt_orders ASSIGNING FIELD-SYMBOL(<fs_order>).
+  LOOP AT lt_orders INTO DATA(ls_ord).
+
+    READ TABLE lt_resb INTO DATA(ls_resb)
+      WITH KEY aufnr = ls_ord-aufnr.
 
     CLEAR gs_log.
-    gs_log-aufnr = <fs_order>-aufnr.
-    gs_log-auart = <fs_order>-auart.
-    gs_log-iwerk = <fs_order>-iwerk.
-    gs_log-erdat = <fs_order>-erdat.
+    MOVE-CORRESPONDING ls_ord TO gs_log.
 
-    READ TABLE lt_afko INTO DATA(ls_afko)
-      WITH KEY aufnr = <fs_order>-aufnr.
-    IF sy-subrc = 0.
-      gs_log-gstrp = ls_afko-gstrp.
-      gs_log-gltrp = ls_afko-gltrp.
-    ENDIF.
-
-    "------------------------------------------------------------*
-    " Evaluate kitting completeness
-    "------------------------------------------------------------*
-    SELECT COUNT(*) FROM resb
-      WHERE aufnr = @<fs_order>-aufnr
-        AND xloek = @space
-        AND enmng < bdmng.
-    IF sy-subrc = 0.
+    IF ls_resb-incomplete > 0.
       gs_log-msgtxt = 'Incomplete components'.
-      gs_log-light  = 'R'.
+      gs_log-light  = icon_led_red.
     ELSE.
       gs_log-msgtxt = 'Kitting complete'.
-      gs_log-light  = 'G'.
+      gs_log-light  = icon_led_green.
     ENDIF.
 
     APPEND gs_log TO gt_log.
 
   ENDLOOP.
-
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* Display Execution Log (Traffic Light ALV)
-*---------------------------------------------------------------------*
-FORM display_execution_log.
-
-  DATA: lo_alv   TYPE REF TO cl_salv_table,
-        lo_cols  TYPE REF TO cl_salv_columns_table,
-        lo_func  TYPE REF TO cl_salv_functions,
-        lx_msg   TYPE REF TO cx_salv_msg,
-        lx_nf    TYPE REF TO cx_salv_not_found.
-
-  IF gt_log IS INITIAL.
-    MESSAGE 'No data found for display.' TYPE 'I'.
-    EXIT.
-  ENDIF.
-
-  TRY.
-      cl_salv_table=>factory(
-        IMPORTING
-          r_salv_table = lo_alv
-        CHANGING
-          t_table      = gt_log ).
-
-      lo_func = lo_alv->get_functions( ).
-      lo_func->set_all( abap_true ).
-
-      lo_cols = lo_alv->get_columns( ).
-      lo_cols->set_optimize( abap_true ).
-
-      LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
-        CASE <fs_log>-light.
-          WHEN 'G'. <fs_log>-light = icon_led_green.
-          WHEN 'R'. <fs_log>-light = icon_led_red.
-          WHEN OTHERS. <fs_log>-light = icon_led_inactive.
-        ENDCASE.
-      ENDLOOP.
-
-      TRY.
-          DATA(lo_col_light) = lo_cols->get_column( 'LIGHT' ).
-          lo_col_light->set_medium_text( 'Result' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      TRY.
-          DATA(lo_col_msg) = lo_cols->get_column( 'MSGTXT' ).
-          lo_col_msg->set_medium_text( 'Status Message' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      lo_alv->display( ).
-
-    CATCH cx_salv_not_found INTO lx_nf.
-      MESSAGE lx_nf->get_text( ) TYPE 'I'.
-    CATCH cx_salv_msg INTO lx_msg.
-      MESSAGE lx_msg->get_text( ) TYPE 'I'.
-  ENDTRY.
 
 ENDFORM.
