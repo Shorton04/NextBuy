@@ -1,65 +1,154 @@
-FORM evaluate_kitting.
+*---------------------------------------------------------------------*
+* FORM display_execution_log
+* Shows ALV of order results with traffic light icons (G/R)
+*---------------------------------------------------------------------*
+FORM display_execution_log.
 
-  CLEAR gt_log.
+  DATA: lo_alv  TYPE REF TO cl_salv_table,
+        lo_cols TYPE REF TO cl_salv_columns,
+        lo_col  TYPE REF TO cl_salv_column,
+        lx_msg  TYPE REF TO cx_salv_msg,
+        lx_nf   TYPE REF TO cx_salv_not_found.
 
-  "--------------------------------------------------------------*
-  " 1. Read Orders using a JOIN (AUFK + AFIH + AFKO)
-  "--------------------------------------------------------------*
-  SELECT a~aufnr,
-         a~auart,
-         b~iwerk,
-         a~erdat,
-         c~gstrp,
-         c~gltrp,
-         a~objnr
-    FROM aufk AS a
-    INNER JOIN afih AS b ON a~aufnr = b~aufnr
-    INNER JOIN afko AS c ON a~aufnr = c~aufnr
-    WHERE a~aufnr IN @s_aufnr
-      AND a~auart IN @s_auart
-      AND b~iwerk IN @s_iwerk
-      AND a~erdat IN @s_erdat
-      AND c~gstrp IN @s_gstrp
-      AND c~gltrp IN @s_gltrp
-    INTO TABLE @gt_orders.
-
-  IF gt_orders IS INITIAL.
-    MESSAGE 'No orders found for selection criteria.' TYPE 'I'.
+  IF gt_log IS INITIAL.
+    MESSAGE 'No data available to display.' TYPE 'I'.
     EXIT.
   ENDIF.
 
+  " Convert 'G'/'R' to LED icons for SALV display
+  LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
+    CASE <fs_log>-light.
+      WHEN 'G'. <fs_log>-light = icon_led_green.
+      WHEN 'R'. <fs_log>-light = icon_led_red.
+      WHEN OTHERS. <fs_log>-light = icon_led_inactive.
+    ENDCASE.
+  ENDLOOP.
+
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = lo_alv
+        CHANGING
+          t_table      = gt_log ).
+
+      lo_alv->get_functions( )->set_all( abap_true ).
+      lo_cols = lo_alv->get_columns( ).
+      lo_cols->set_optimize( abap_true ).
+
+      " Column headers
+      TRY.
+          lo_col = lo_cols->get_column( 'AUFNR' ).
+          lo_col->set_medium_text( 'Order' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'AUART' ).
+          lo_col->set_medium_text( 'Order Type' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'IWERK' ).
+          lo_col->set_medium_text( 'Plant' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'ERDAT' ).
+          lo_col->set_medium_text( 'Created On' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'GSTRP' ).
+          lo_col->set_medium_text( 'Basic Start' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'GLTRP' ).
+          lo_col->set_medium_text( 'Basic Finish' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'MSGTXT' ).
+          lo_col->set_medium_text( 'Status Message' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'LIGHT' ).
+          lo_col->set_medium_text( 'Result' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      lo_alv->display( ).
+
+    CATCH cx_salv_not_found INTO lx_nf.
+      MESSAGE lx_nf->get_text( ) TYPE 'I'.
+    CATCH cx_salv_msg INTO lx_msg.
+      MESSAGE lx_msg->get_text( ) TYPE 'I'.
+  ENDTRY.
+
+ENDFORM.
+
+
+
+
+*---------------------------------------------------------------------*
+* FORM evaluate_kitting
+* Purpose : Evaluate completeness of order components
+* Logic   : If all RESB-ENMNG >= RESB-BDMNG → Green
+*            Else → Red
+* PDF     : Only two colors (Green = Ready, Red = Incomplete)
+*---------------------------------------------------------------------*
+FORM evaluate_kitting.
+
+  DATA: lt_status TYPE TABLE OF lty_log,
+        lt_incomplete TYPE TABLE OF aufk-aufnr.
+
   "--------------------------------------------------------------*
-  " 2. Evaluate completeness of components (RESB)
+  " 1. Find orders with incomplete components (single SQL JOIN)
   "--------------------------------------------------------------*
-  LOOP AT gt_orders INTO DATA(ls_ord).
+  SELECT DISTINCT r~aufnr
+    FROM resb AS r
+    INNER JOIN aufk AS a ON a~aufnr = r~aufnr
+    WHERE a~aufnr IN @s_aufnr
+      AND a~auart IN @s_auart
+      AND r~xloek = @space
+      AND r~enmng < r~bdmng
+    INTO TABLE @lt_incomplete.
 
-    " Check component completeness using aggregation
-    SELECT COUNT(*) AS total,
-           SUM( CASE WHEN enmng < bdmng THEN 1 ELSE 0 END ) AS incomplete
-      FROM resb
-      WHERE aufnr = @ls_ord-aufnr
-        AND xloek = @space
-        AND postp IN ( @gc_postp_l, @gc_postp_n )
-      INTO @DATA(ls_comp).
+  "--------------------------------------------------------------*
+  " 2. Assign traffic light and message based on completeness
+  "--------------------------------------------------------------*
+  LOOP AT gt_orders INTO DATA(ls_order).
 
-    CLEAR gs_log.
-    MOVE-CORRESPONDING ls_ord TO gs_log.
+    READ TABLE lt_incomplete WITH KEY aufnr = ls_order-aufnr TRANSPORTING NO FIELDS.
 
-    "------------------------------------------------------------*
-    " 3. Evaluate completeness and assign traffic light
-    "------------------------------------------------------------*
-    IF ls_comp-incomplete > 0.
-      gs_log-msgtxt = 'Incomplete components'.
-      gs_log-light  = gc_light_red.
-    ELSEIF ls_comp-total = 0.
-      gs_log-msgtxt = 'No components found'.
-      gs_log-light  = gc_light_inact.
+    IF sy-subrc = 0.
+      " Incomplete components
+      APPEND VALUE #( aufnr  = ls_order-aufnr
+                      auart  = ls_order-auart
+                      iwerk  = ls_order-iwerk
+                      erdat  = ls_order-erdat
+                      gstrp  = ls_order-gstrp
+                      gltrp  = ls_order-gltrp
+                      msgtxt = 'Incomplete components'
+                      light  = 'R' ) TO gt_log.
     ELSE.
-      gs_log-msgtxt = 'Kitting complete'.
-      gs_log-light  = gc_light_green.
+      " Ready to set KCMP
+      APPEND VALUE #( aufnr  = ls_order-aufnr
+                      auart  = ls_order-auart
+                      iwerk  = ls_order-iwerk
+                      erdat  = ls_order-erdat
+                      gstrp  = ls_order-gstrp
+                      gltrp  = ls_order-gltrp
+                      msgtxt = 'Ready to set KCMP'
+                      light  = 'G' ) TO gt_log.
     ENDIF.
-
-    APPEND gs_log TO gt_log.
 
   ENDLOOP.
 
