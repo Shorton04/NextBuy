@@ -1,80 +1,26 @@
 *&---------------------------------------------------------------------*
-*& Include          ZIN_A2R_CMX_WORKORDER_TOP
+*& Include  ZTR_A2D_REV_RECOG_CONSMAT_TOP
 *&---------------------------------------------------------------------*
 
-CONSTANTS:
-  c_stat_rel  TYPE jest-stat VALUE 'I0002',   "Released
-  c_stat_teco TYPE jest-stat VALUE 'I0045',   "Technically Completed
-  c_stat_lkd  TYPE jest-stat VALUE 'I0043',   "Locked
-  c_stat_cmxc TYPE jest-stat VALUE 'E0010',   "CMX Confirmed
-  c_stat_cmxs TYPE jest-stat VALUE 'E0014'.   "Sent to CMX
+TABLES: mara, afpo, rsapetdtl, prps, zkcgt_wbs_recog.
 
+DATA: go_controller TYPE REF TO zcl_a2d_controller,
+      go_model_view TYPE REF TO zcl_a2d_revenue_recog_consmat,
+      gs_parameter  TYPE zcl_a2d_revenue_recog_consmat=>ts_parameter,
+      ls_bdcdata    TYPE bdcdata.
 
-*---------------------------------------------------------------------*
-* Type Definitions
-*---------------------------------------------------------------------*
+" Stored ranges/backups for selection-screen select-options (global ranges)
+DATA: gt_psphi  TYPE RANGE OF prps-psphi,
+      gt_pspnr  TYPE RANGE OF prps-pspnr,
+      gt_werks  TYPE RANGE OF afpo-dwerk,
+      gt_charg  TYPE RANGE OF afpo-charg,
+      gt_matnr  TYPE RANGE OF mara-matnr,
+      gt_mtart  TYPE RANGE OF mara-mtart,
+      gt_exdate TYPE RANGE OF rsapetdtl-extraction_date,
+      gt_amtsr  TYPE RANGE OF zkcgt_wbs_recog-amount_source,
+      gt_ernam  TYPE RANGE OF zkcgt_wbs_recog-ernam,
+      gt_erdat  TYPE RANGE OF zkcgt_wbs_recog-erdat,
+      gt_status TYPE RANGE OF zkcgt_wbs_recog-status.
 
-"--- Output structure for ALV display
-TYPES: BEGIN OF ty_output,
-         OrderMessageStatus        TYPE char10,
-         Plant                     TYPE werks_d,
-         MaintenanceOrder          TYPE aufnr,
-         MaintenanceOrderOperation TYPE vornr,
-         SystemStatusText          TYPE char40,
-         TechnicalObject           TYPE char30,
-         MaintOrdBasicStartDate    TYPE viaufkst-gstrp,
-         MaintOrdBasicEndDate      TYPE viaufkst-gltrp,
-         LatestAcceptableComplDate TYPE viaufkst-lacd_date,
-         SystemId                  TYPE sy-sysid,
-         Msg                       TYPE char72,
-       END OF ty_output.
-
-"--- Prefetch helper structures
-TYPES: BEGIN OF ty_jest_data,
-         objnr TYPE jest-objnr,
-         stat  TYPE jest-stat,
-         inact TYPE jest-inact,
-       END OF ty_jest_data.
-
-TYPES: BEGIN OF ty_inob_data,
-         objek TYPE inob-objek,
-         cuobj TYPE inob-cuobj,
-       END OF ty_inob_data.
-
-TYPES: BEGIN OF ty_ausp_data,
-         objek TYPE ausp-objek,
-         atinn TYPE ausp-atinn,
-         atwrt TYPE ausp-atwrt,
-       END OF ty_ausp_data.
-
-TYPES: BEGIN OF ty_cdhdr_data,
-         objectid TYPE cdhdr-objectid,
-         udate    TYPE cdhdr-udate,
-         utime    TYPE cdhdr-utime,
-       END OF ty_cdhdr_data.
-
-
-*---------------------------------------------------------------------*
-* Data Declarations
-*---------------------------------------------------------------------*
-
-"--- Main output
-DATA: gt_output TYPE TABLE OF ty_output,
-      gs_output TYPE ty_output.
-
-"--- Orders
-DATA: gt_orders TYPE TABLE OF viaufkst,
-      gs_order  TYPE viaufkst.
-
-"--- Prefetched master data tables
-DATA: gt_jest  TYPE TABLE OF ty_jest_data,
-      gs_jest  TYPE ty_jest_data,
-      gt_inob  TYPE TABLE OF ty_inob_data,
-      gs_inob  TYPE ty_inob_data,
-      gt_ausp  TYPE TABLE OF ty_ausp_data,
-      gs_ausp  TYPE ty_ausp_data,
-      gt_cdhdr TYPE TABLE OF ty_cdhdr_data,
-      gs_cdhdr TYPE ty_cdhdr_data.
-
-"--- Misc
-DATA: gv_atinn TYPE atinn.   "INTERFACE characteristic ID
+" single flag parameter backup (global variable)
+DATA: lv_batrel TYPE flag.
