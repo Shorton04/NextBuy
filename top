@@ -1,5 +1,6 @@
 *---------------------------------------------------------------------*
 * Include ZTR_A2R_KCMP_STATUS_TOP
+* (global types, constants and data used by all includes)
 *---------------------------------------------------------------------*
 
 TABLES: aufk, afih, afko, jest, resb, jsto, tj30, tj30t.
@@ -24,13 +25,16 @@ TYPES: BEGIN OF lty_log,
          erdat    TYPE aufk-erdat,
          gstrp    TYPE afko-gstrp,
          gltrp    TYPE afko-gltrp,
-         msgtype  TYPE char1,
-         msgid    TYPE symsgid,
-         msgno    TYPE symsgno,
+         msgtype  TYPE char1,      " 'I','E','S'...
+         msgid    TYPE char20,
+         msgno    TYPE char10,
          msgtxt   TYPE string,
-         light    TYPE icon_d,
+         light    TYPE char20,     " will hold 'G'/'Y'/'R' then icon constants
        END OF lty_log.
 
+"--------------------------------------------------------------------*
+" Global internal tables / variables
+"--------------------------------------------------------------------*
 DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
       gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY.
 
@@ -38,6 +42,12 @@ DATA: gv_user            TYPE sy-uname,
       gv_now             TYPE sy-datum,
       gv_user_authorized TYPE abap_bool VALUE abap_true.
 
+"--------------------------------------------------------------------*
+" Constants
+"--------------------------------------------------------------------*
 CONSTANTS:
-  gc_postp_l TYPE char1 VALUE 'L',
-  gc_postp_n TYPE char1 VALUE 'N'.
+  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
+  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
+
+" KCMP internal status resolved dynamically (filled by get_kcmp_status)
+DATA: gc_estat TYPE tj30-estat.
