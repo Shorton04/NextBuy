@@ -1,31 +1,77 @@
 *&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_SEL
+*& Include  ZTR_A2D_REV_RECOG_CONSMAT_SEL
 *&---------------------------------------------------------------------*
-SELECTION-SCREEN BEGIN OF BLOCK b01 WITH FRAME TITLE text-s01.
-SELECT-OPTIONS:
-  s_aufnr FOR aufk-aufnr,
-  s_auart FOR aufk-auart,
-  s_iwerk FOR afih-iwerk,
-  s_erdat FOR aufk-erdat,
-  s_gstrp FOR afko-gstrp,
-  s_gltrp FOR afko-gltrp.
-SELECTION-SCREEN END OF BLOCK b01.
 
-SELECTION-SCREEN BEGIN OF BLOCK b04 WITH FRAME TITLE text-s04.
-SELECT-OPTIONS:
-  s_statin FOR jest-stat NO INTERVALS,  " Inclusive statuses (e.g. REL)
-  s_statex FOR jest-stat NO INTERVALS.  " Exclusive statuses (e.g. KCMP, TECO)
-SELECTION-SCREEN END OF BLOCK b04.
+SELECTION-SCREEN: BEGIN OF SCREEN 0100 AS SUBSCREEN,
+                  BEGIN OF BLOCK b1 WITH FRAME TITLE text-002.
 
-SELECTION-SCREEN BEGIN OF BLOCK b02 WITH FRAME TITLE text-s02.
-PARAMETERS:
-  p_reserv AS CHECKBOX DEFAULT 'X',
-  p_preq   AS CHECKBOX DEFAULT 'X'.
-SELECTION-SCREEN END OF BLOCK b02.
+PARAMETERS: p_rb1 RADIOBUTTON GROUP rg1 DEFAULT 'X' USER-COMMAND rec,
+            p_rb2 RADIOBUTTON GROUP rg1,
+            p_rb3 RADIOBUTTON GROUP rg1.
 
-SELECTION-SCREEN BEGIN OF BLOCK b03 WITH FRAME TITLE text-s03.
-PARAMETERS:
-  p_spras TYPE spras DEFAULT 'E' OBLIGATORY,
-  p_set   RADIOBUTTON GROUP r1 DEFAULT 'X',
-  p_reset RADIOBUTTON GROUP r1.
-SELECTION-SCREEN END OF BLOCK b03.
+SELECTION-SCREEN: END OF BLOCK b1,
+                  BEGIN OF BLOCK b2 WITH FRAME TITLE text-001.
+
+" Select-options use s_ prefix per naming convention
+SELECT-OPTIONS: s_psphi  FOR prps-psphi MODIF ID m2,
+                s_npspnr FOR prps-pspnr MODIF ID m3,
+                s_pspnr  FOR prps-pspnr MODIF ID m4,
+                s_werks  FOR afpo-dwerk,
+                s_charg  FOR afpo-charg MODIF ID m5,
+                s_matnr  FOR mara-matnr MODIF ID m5,
+                s_mtart  FOR mara-mtart DEFAULT 'ROH' MODIF ID m1,
+                s_exdate FOR rsapetdtl-extraction_date
+                         NO INTERVALS NO-EXTENSION MODIF ID m1,
+                s_amtsr  FOR zkcgt_wbs_recog-amount_source MODIF ID m3,
+                s_ernam  FOR zkcgt_wbs_recog-ernam  MODIF ID m3,
+                s_erdat  FOR zkcgt_wbs_recog-erdat  MODIF ID m3,
+                s_status FOR zkcgt_wbs_recog-status MODIF ID m3 DEFAULT space.
+
+PARAMETERS: p_batrel TYPE flag DEFAULT 'X' MODIF ID m1.
+
+SELECTION-SCREEN: END OF BLOCK b2,
+                  END OF SCREEN 0100.
+
+*---------------------------------------------------------------------*
+* INITIALIZATION
+*---------------------------------------------------------------------*
+INITIALIZATION.
+  PERFORM init_data.
+
+  CREATE OBJECT go_model_view.
+  CALL FUNCTION 'ZRFW_CONTROLLER_M01_V01_L02'
+    EXPORTING
+      iv_parameter_struct_name = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_PARAMETER'
+      iv_result_struct_name    = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_RESULT'
+      io_view_report           = go_model_view
+      io_view_alv              = go_model_view
+      io_model_selection       = go_model_view
+      iv_report_id             = sy-repid
+      iv_parameter_subscr_id   = '0100'
+    IMPORTING
+      eo_controller            = go_controller.
+  ASSERT go_controller IS BOUND.
+
+*---------------------------------------------------------------------*
+* AT SELECTION-SCREEN OUTPUT
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM modify_screen.
+
+  IF go_controller IS BOUND.
+    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
+    go_controller->on_selection_screen_output( CHANGING cs_parameter = gs_parameter ).
+    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
+  ENDIF.
+
+*---------------------------------------------------------------------*
+* AT SELECTION-SCREEN
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN.
+  PERFORM validate_data.
+
+  IF go_controller IS BOUND.
+    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
+    go_controller->on_selection_screen( CHANGING cs_parameter = gs_parameter ).
+    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
+  ENDIF.
