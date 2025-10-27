@@ -1,60 +1,163 @@
+*---------------------------------------------------------------------*
+* Include ZTR_A2R_KCMP_STATUS_F01
+* Functional Forms - Kitting Complete User Status
+*---------------------------------------------------------------------*
+
+*---------------------------------------------------------------------*
+* FORM: evaluate_kitting
+*---------------------------------------------------------------------*
 FORM evaluate_kitting.
 
   CLEAR gt_log.
 
   "--------------------------------------------------------------*
-  " Single optimized read: AUFK + AFKO join
+  " 1. Read Orders using a JOIN (AUFK + AFKO)
   "--------------------------------------------------------------*
   SELECT a~aufnr,
          a~auart,
-         a~iwerk,
+         b~iwerk,
          a~erdat,
          b~gstrp,
-         b~gltrp
+         b~gltrp,
+         a~objnr
     FROM aufk AS a
-    INNER JOIN afko AS b
-      ON a~aufnr = b~aufnr
+    INNER JOIN afih AS b ON a~aufnr = b~aufnr
+    INNER JOIN afko AS c ON a~aufnr = c~aufnr
     WHERE a~aufnr IN @s_aufnr
       AND a~auart IN @s_auart
-      AND a~iwerk IN @s_iwerk
+      AND b~iwerk IN @s_iwerk
       AND a~erdat IN @s_erdat
-      AND b~gstrp IN @s_gstrp
-      AND b~gltrp IN @s_gltrp
-    INTO TABLE @DATA(lt_orders).
+      AND c~gstrp IN @s_gstrp
+      AND c~gltrp IN @s_gltrp
+    INTO TABLE @gt_orders.
 
-  IF lt_orders IS INITIAL.
-    MESSAGE 'No matching orders found.' TYPE 'I'.
+  IF gt_orders IS INITIAL.
+    MESSAGE 'No orders found for selection criteria.' TYPE 'I'.
     EXIT.
   ENDIF.
 
   "--------------------------------------------------------------*
-  " Evaluate component completeness (still needs RESB check)
+  " 2. Evaluate completeness of components (RESB)
   "--------------------------------------------------------------*
-  SELECT aufnr, SUM( CASE WHEN enmng < bdmng THEN 1 ELSE 0 END ) AS incomplete
-    FROM resb
-    WHERE aufnr IN @lt_orders
-      AND xloek = @space
-    GROUP BY aufnr
-    INTO TABLE @DATA(lt_resb).
+  LOOP AT gt_orders INTO DATA(ls_ord).
 
-  LOOP AT lt_orders INTO DATA(ls_ord).
-
-    READ TABLE lt_resb INTO DATA(ls_resb)
-      WITH KEY aufnr = ls_ord-aufnr.
+    " Select components for the order
+    SELECT COUNT(*) AS total,
+           SUM( CASE WHEN enmng < bdmng THEN 1 ELSE 0 END ) AS incomplete
+      FROM resb
+      WHERE aufnr = @ls_ord-aufnr
+        AND xloek = @space
+        AND postp IN ( @gc_postp_l, @gc_postp_n )
+      INTO @DATA(ls_comp).
 
     CLEAR gs_log.
     MOVE-CORRESPONDING ls_ord TO gs_log.
 
-    IF ls_resb-incomplete > 0.
+    "------------------------------------------------------------*
+    " 3. Evaluate completeness and assign traffic light
+    "------------------------------------------------------------*
+    IF ls_comp-incomplete > 0.
       gs_log-msgtxt = 'Incomplete components'.
-      gs_log-light  = icon_led_red.
+      gs_log-light  = gc_light_red.
+    ELSEIF ls_comp-total = 0.
+      gs_log-msgtxt = 'No components found'.
+      gs_log-light  = gc_light_inact.
     ELSE.
       gs_log-msgtxt = 'Kitting complete'.
-      gs_log-light  = icon_led_green.
+      gs_log-light  = gc_light_green.
     ENDIF.
 
     APPEND gs_log TO gt_log.
 
   ENDLOOP.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: display_execution_log
+*---------------------------------------------------------------------*
+FORM display_execution_log.
+
+  DATA: lo_alv   TYPE REF TO cl_salv_table,
+        lo_cols  TYPE REF TO cl_salv_columns_table,
+        lo_func  TYPE REF TO cl_salv_functions,
+        lx_msg   TYPE REF TO cx_salv_msg,
+        lx_nf    TYPE REF TO cx_salv_not_found.
+
+  IF gt_log IS INITIAL.
+    MESSAGE 'No data available to display.' TYPE 'I'.
+    EXIT.
+  ENDIF.
+
+  TRY.
+      " Create ALV
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = lo_alv
+        CHANGING
+          t_table      = gt_log ).
+
+      lo_func = lo_alv->get_functions( ).
+      lo_func->set_all( abap_true ).
+
+      lo_cols = lo_alv->get_columns( ).
+      lo_cols->set_optimize( abap_true ).
+
+      " Customize column headers
+      TRY.
+          DATA(lo_col) = lo_cols->get_column( 'AUFNR' ).
+          lo_col->set_medium_text( 'Order' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'AUART' ).
+          lo_col->set_medium_text( 'Order Type' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'IWERK' ).
+          lo_col->set_medium_text( 'Plant' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'ERDAT' ).
+          lo_col->set_medium_text( 'Created On' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'GSTRP' ).
+          lo_col->set_medium_text( 'Basic Start' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'GLTRP' ).
+          lo_col->set_medium_text( 'Basic Finish' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'MSGTXT' ).
+          lo_col->set_medium_text( 'Status Message' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'LIGHT' ).
+          lo_col->set_medium_text( 'Result' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      lo_alv->display( ).
+
+    CATCH cx_salv_not_found INTO lx_nf.
+      MESSAGE lx_nf->get_text( ) TYPE 'I'.
+    CATCH cx_salv_msg INTO lx_msg.
+      MESSAGE lx_msg->get_text( ) TYPE 'I'.
+  ENDTRY.
 
 ENDFORM.
