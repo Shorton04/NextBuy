@@ -1,9 +1,151 @@
+*&---------------------------------------------------------------------*
+*& Include ZTR_A2R_KCMP_STATUS_F01
+*&---------------------------------------------------------------------*
+
 *---------------------------------------------------------------------*
-* FORM evaluate_kitting
-* Purpose : Evaluate completeness of order components
-* Logic   : If all RESB-ENMNG >= RESB-BDMNG → Green
-*            Else → Red
-* PDF     : Only two colors (Green = Ready, Red = Incomplete)
+* FORM: init_defaults
+*---------------------------------------------------------------------*
+FORM init_defaults.
+  gv_user = sy-uname.
+  gv_now  = sy-datum.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: get_kcmp_status
+*---------------------------------------------------------------------*
+FORM get_kcmp_status.
+  DATA: lv_stsma TYPE jsto-stsma,
+        lv_aufnr TYPE aufk-aufnr,
+        lv_objnr TYPE jest-objnr.
+
+  READ TABLE s_aufnr INDEX 1 INTO DATA(ls_range).
+  IF sy-subrc <> 0 OR ls_range-low IS INITIAL.
+    MESSAGE 'Please enter at least one Order Number.' TYPE 'E'.
+  ENDIF.
+
+  lv_aufnr = ls_range-low.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = lv_aufnr
+    IMPORTING
+      output = lv_aufnr.
+
+  CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
+
+  SELECT SINGLE stsma
+    INTO @lv_stsma
+    FROM jsto
+    WHERE objnr = @lv_objnr.
+
+  IF sy-subrc <> 0 OR lv_stsma IS INITIAL.
+    MESSAGE |Cannot determine status profile for order { lv_aufnr }.| TYPE 'E'.
+  ENDIF.
+
+  SELECT SINGLE j~estat
+    INTO @gc_estat
+    FROM tj30 AS j
+    INNER JOIN tj30t AS t
+      ON j~estat = t~estat
+     AND j~stsma = t~stsma
+   WHERE j~stsma = @lv_stsma
+     AND t~txt04 = 'KCMP'
+     AND t~spras = @sy-langu.
+
+  IF sy-subrc <> 0.
+    MESSAGE |KCMP user status not found for profile { lv_stsma } and language { sy-langu }.| TYPE 'E'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: validate_selection
+*---------------------------------------------------------------------*
+FORM validate_selection.
+  IF s_aufnr[] IS INITIAL AND s_iwerk[] IS INITIAL.
+    MESSAGE 'Please enter at least one order or plant.' TYPE 'E'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: fetch_orders (base dataset)
+*---------------------------------------------------------------------*
+FORM fetch_orders.
+  CLEAR gt_orders.
+
+  SELECT a~aufnr,
+         a~auart,
+         b~iwerk,
+         a~erdat,
+         c~gstrp,
+         c~gltrp,
+         a~objnr
+    FROM aufk AS a
+    INNER JOIN afih AS b ON a~aufnr = b~aufnr
+    INNER JOIN afko AS c ON a~aufnr = c~aufnr
+    WHERE a~aufnr IN @s_aufnr
+      AND a~auart IN @s_auart
+      AND b~iwerk IN @s_iwerk
+    INTO TABLE @gt_orders.
+
+  IF gt_orders IS INITIAL.
+    MESSAGE 'No orders found for selection criteria.' TYPE 'I'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: filter_by_jest (using JOIN instead of FOR ALL ENTRIES)
+*---------------------------------------------------------------------*
+FORM filter_by_jest.
+  DATA lt_keep TYPE TABLE OF lty_order.
+
+  SELECT DISTINCT a~aufnr,
+                  a~auart,
+                  b~iwerk,
+                  a~erdat,
+                  c~gstrp,
+                  c~gltrp,
+                  a~objnr
+    FROM aufk AS a
+    INNER JOIN afih AS b ON a~aufnr = b~aufnr
+    INNER JOIN afko AS c ON a~aufnr = c~aufnr
+    INNER JOIN jest AS j ON a~objnr = j~objnr
+    WHERE j~inact = @space
+      AND j~stat IN @s_statin
+      AND j~stat NOT IN @s_statex
+      AND a~aufnr IN @s_aufnr
+      AND b~iwerk IN @s_iwerk
+    INTO TABLE @lt_keep.
+
+  gt_orders = lt_keep.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: filter_has_components (using EXISTS)
+*---------------------------------------------------------------------*
+FORM filter_has_components.
+  DATA lt_keep TYPE TABLE OF lty_order.
+
+  SELECT a~aufnr,
+         a~auart,
+         b~iwerk,
+         a~erdat,
+         c~gstrp,
+         c~gltrp,
+         a~objnr
+    FROM aufk AS a
+    INNER JOIN afih AS b ON a~aufnr = b~aufnr
+    INNER JOIN afko AS c ON a~aufnr = c~aufnr
+    WHERE EXISTS (
+      SELECT 1 FROM resb AS r
+        WHERE r~aufnr = a~aufnr
+          AND r~xloek = @space )
+      AND a~aufnr IN @s_aufnr
+    INTO TABLE @lt_keep.
+
+  gt_orders = lt_keep.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: evaluate_kitting (optimized for S/4HANA joins)
 *---------------------------------------------------------------------*
 FORM evaluate_kitting.
 
@@ -49,5 +191,205 @@ FORM evaluate_kitting.
     ENDIF.
 
   ENDLOOP.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: check_authorizations
+*---------------------------------------------------------------------*
+FORM check_authorizations.
+  AUTHORITY-CHECK OBJECT 'C_AFKO_ACT' ID 'PS_ACTVT' FIELD '02'.
+  IF sy-subrc <> 0.
+    MESSAGE 'User not authorized to change orders.' TYPE 'E'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: update_user_status
+*---------------------------------------------------------------------*
+FORM update_user_status.
+  LOOP AT gt_log INTO DATA(ls_log) WHERE light = 'Y'.
+
+    DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
+          lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
+          lt_methods TYPE TABLE OF bapi_alm_order_method,
+          lt_return  TYPE TABLE OF bapiret2,
+          ls_return  TYPE bapiret2,
+          lv_action  TYPE string.
+
+    IF p_reset = abap_true.
+      lv_action = 'RESET'.
+    ELSE.
+      lv_action = 'SET'.
+    ENDIF.
+
+    APPEND VALUE #( orderid = ls_log-aufnr ) TO lt_header.
+
+    IF lv_action = 'SET'.
+      APPEND VALUE #( user_st_text = 'KCMP' langu = p_spras ) TO lt_status.
+    ELSE.
+      APPEND VALUE #( user_st_text = 'KCMP' inactive = abap_true langu = p_spras ) TO lt_status.
+    ENDIF.
+
+    APPEND VALUE #( refnumber = '00001' objecttype = 'HEADER'
+                    method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
+    APPEND VALUE #( refnumber = '00001' objecttype = 'USERSTATUS'
+                    method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
+    APPEND VALUE #( refnumber = '00003' objecttype = 'ORDER'
+                    method = 'SAVE' objectkey = ls_log-aufnr ) TO lt_methods.
+
+    CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
+      TABLES
+        it_header     = lt_header
+        it_methods    = lt_methods
+        it_userstatus = lt_status
+        return        = lt_return.
+
+    READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
+    IF sy-subrc = 0.
+      ls_log-msgtxt = ls_return-message(72).
+      ls_log-light  = 'R'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    ELSE.
+      IF lv_action = 'SET'.
+        ls_log-msgtxt = |KCMP set successfully ({ gc_estat })|.
+      ELSE.
+        ls_log-msgtxt = |KCMP reset successfully ({ gc_estat })|.
+      ENDIF.
+      ls_log-light  = 'G'.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+    ENDIF.
+
+    PERFORM release_locks USING ls_log-aufnr.
+    MODIFY gt_log FROM ls_log.
+  ENDLOOP.
+
+  COMMIT WORK.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: display_execution_log
+*---------------------------------------------------------------------*
+FORM display_execution_log.
+
+  DATA: lo_alv  TYPE REF TO cl_salv_table,
+        lo_cols TYPE REF TO cl_salv_columns,
+        lo_col  TYPE REF TO cl_salv_column,
+        lx_msg  TYPE REF TO cx_salv_msg,
+        lx_nf   TYPE REF TO cx_salv_not_found.
+
+  IF gt_log IS INITIAL.
+    MESSAGE 'No data available to display.' TYPE 'I'.
+    EXIT.
+  ENDIF.
+
+  " Convert 'G'/'R' to LED icons for SALV display
+  LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
+    CASE <fs_log>-light.
+      WHEN 'G'. <fs_log>-light = icon_led_green.
+      WHEN 'R'. <fs_log>-light = icon_led_red.
+      WHEN OTHERS. <fs_log>-light = icon_led_inactive.
+    ENDCASE.
+  ENDLOOP.
+
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = lo_alv
+        CHANGING
+          t_table      = gt_log ).
+
+      lo_alv->get_functions( )->set_all( abap_true ).
+      lo_cols = lo_alv->get_columns( ).
+      lo_cols->set_optimize( abap_true ).
+
+      " Column headers
+      TRY.
+          lo_col = lo_cols->get_column( 'AUFNR' ).
+          lo_col->set_medium_text( 'Order' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'AUART' ).
+          lo_col->set_medium_text( 'Order Type' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'IWERK' ).
+          lo_col->set_medium_text( 'Plant' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'ERDAT' ).
+          lo_col->set_medium_text( 'Created On' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'GSTRP' ).
+          lo_col->set_medium_text( 'Basic Start' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'GLTRP' ).
+          lo_col->set_medium_text( 'Basic Finish' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'MSGTXT' ).
+          lo_col->set_medium_text( 'Status Message' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      TRY.
+          lo_col = lo_cols->get_column( 'LIGHT' ).
+          lo_col->set_medium_text( 'Result' ).
+        CATCH cx_salv_not_found.
+      ENDTRY.
+
+      lo_alv->display( ).
+
+    CATCH cx_salv_not_found INTO lx_nf.
+      MESSAGE lx_nf->get_text( ) TYPE 'I'.
+    CATCH cx_salv_msg INTO lx_msg.
+      MESSAGE lx_msg->get_text( ) TYPE 'I'.
+  ENDTRY.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* FORM: release_locks
+*---------------------------------------------------------------------*
+FORM release_locks USING p_aufnr TYPE aufk-aufnr.
+
+  DATA: lv_aufnr    TYPE aufk-aufnr,
+        lv_rsnum    TYPE resb-rsnum,
+        lv_prueflos TYPE qals-prueflos,
+        lv_qmnum    TYPE qmel-qmnum,
+        lv_objnr    TYPE jest-objnr.
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_aufnr
+    IMPORTING
+      output = lv_aufnr.
+
+  SELECT SINGLE rsnum INTO @lv_rsnum FROM resb WHERE aufnr = @lv_aufnr AND xloek = @space.
+  SELECT SINGLE prueflos INTO @lv_prueflos FROM qals WHERE aufnr = @lv_aufnr.
+  SELECT SINGLE qmnum INTO @lv_qmnum FROM qmel WHERE aufnr = @lv_aufnr.
+
+  CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
+
+  CALL FUNCTION 'DEQUEUE_EAUFK' EXPORTING aufnr = lv_aufnr.
+  CALL FUNCTION 'DEQUEUE_EAFKO' EXPORTING aufnr = lv_aufnr.
+  CALL FUNCTION 'DEQUEUE_ERESB' EXPORTING rsnum = lv_rsnum.
+  CALL FUNCTION 'DEQUEUE_EQALS' EXPORTING prueflos = lv_prueflos.
+  CALL FUNCTION 'DEQUEUE_EQMEL' EXPORTING qmnum = lv_qmnum.
+  CALL FUNCTION 'DEQUEUE_ALL'.
 
 ENDFORM.
