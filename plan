@@ -9,7 +9,7 @@
 * --------------------------------------------------------------------
 * Modification list.:
 * Date          Author    TR Number          Description
-* 28.10.2025   HQ75177    D30K907584    Split includes
+* 28.10.2025   HQ75177    D30K907584    Split includes / Aligned naming
 * ====================================================================
 
 REPORT ztr_a2d_rev_recog_consmat.
