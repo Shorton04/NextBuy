@@ -125,7 +125,7 @@ FORM modify_screen.
 ENDFORM.
 
 *---------------------------------------------------------------------*
-* BDC_DYNPRO
+* BDC ROUTINES
 *---------------------------------------------------------------------*
 FORM bdc_dynpro USING iv_program iv_dynpro
                 CHANGING ct_bdcdata TYPE bdcdata_tab.
@@ -136,9 +136,6 @@ FORM bdc_dynpro USING iv_program iv_dynpro
   APPEND gs_bdcdata TO ct_bdcdata.
 ENDFORM.
 
-*---------------------------------------------------------------------*
-* BDC_FIELD
-*---------------------------------------------------------------------*
 FORM bdc_field USING iv_fnam iv_fval
                CHANGING ct_bdcdata TYPE bdcdata_tab.
   CLEAR gs_bdcdata.
