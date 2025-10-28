@@ -1,32 +1,25 @@
-*&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_SEL
-*&---------------------------------------------------------------------*
-SELECTION-SCREEN BEGIN OF BLOCK b01 WITH FRAME TITLE TEXT-s01.
-  SELECT-OPTIONS:
-    s_aufnr FOR aufk-aufnr,
-    s_auart FOR aufk-auart,
-    s_iwerk FOR afih-iwerk,
-    s_erdat FOR aufk-erdat,
-    s_gstrp FOR afko-gstrp,
-    s_gltrp FOR afko-gltrp.
-SELECTION-SCREEN END OF BLOCK b01.
-
-SELECTION-SCREEN BEGIN OF BLOCK b04 WITH FRAME TITLE TEXT-s04.
-  SELECT-OPTIONS:
-    s_statin FOR jest-stat NO INTERVALS,
-    s_statex FOR jest-stat NO INTERVALS.
-SELECTION-SCREEN END OF BLOCK b04.
-
-SELECTION-SCREEN BEGIN OF BLOCK b02 WITH FRAME TITLE TEXT-s02.
-  PARAMETERS:
-    p_reserv AS CHECKBOX DEFAULT 'X',
-    p_preq   AS CHECKBOX DEFAULT 'X'.
-SELECTION-SCREEN END OF BLOCK b02.
-
-SELECTION-SCREEN BEGIN OF BLOCK b03 WITH FRAME TITLE TEXT-s03.
-  PARAMETERS:
-    p_estat TYPE tj30t-txt04 DEFAULT 'KCMP',
-    p_spras TYPE spras DEFAULT 'E' OBLIGATORY,
-    p_set   RADIOBUTTON GROUP r1 DEFAULT 'X',
-    p_reset RADIOBUTTON GROUP r1.
-SELECTION-SCREEN END OF BLOCK b03.
+*---------------------------------------------------------------------*
+*  SEL Include: Selection Screen Declaration
+*---------------------------------------------------------------------*
+SELECTION-SCREEN: BEGIN OF SCREEN 0100 AS SUBSCREEN,
+                  BEGIN OF BLOCK b1 WITH FRAME TITLE text-002.
+PARAMETERS: p_rb1 RADIOBUTTON GROUP rg1 DEFAULT 'X' USER-COMMAND rec,
+            p_rb2 RADIOBUTTON GROUP rg1,
+            p_rb3 RADIOBUTTON GROUP rg1.
+SELECTION-SCREEN: END OF BLOCK b1,
+                  BEGIN OF BLOCK b2 WITH FRAME TITLE text-001.
+SELECT-OPTIONS: r_psphi  FOR prps-psphi MODIF ID m2,
+                r_npspnr FOR prps-pspnr MODIF ID m3,
+                r_pspnr  FOR prps-pspnr MODIF ID m4,
+                r_werks  FOR afpo-dwerk,
+                r_charg  FOR afpo-charg MODIF ID m5,
+                r_matnr  FOR mara-matnr MODIF ID m5,
+                r_mtart  FOR mara-mtart DEFAULT 'ROH' MODIF ID m1,
+                r_exdate FOR rsapetdtl-extraction_date NO INTERVALS NO-EXTENSION MODIF ID m1,
+                r_amtsr  FOR zkcgt_wbs_recog-amount_source MODIF ID m3,
+                r_ernam  FOR zkcgt_wbs_recog-ernam  MODIF ID m3,
+                r_erdat  FOR zkcgt_wbs_recog-erdat  MODIF ID m3,
+                r_status FOR zkcgt_wbs_recog-status MODIF ID m3 DEFAULT space.
+PARAMETERS: p_batrel TYPE flag DEFAULT 'X' MODIF ID m1.
+SELECTION-SCREEN: END OF BLOCK b2,
+                  END OF SCREEN 0100.
