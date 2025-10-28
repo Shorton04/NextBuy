@@ -1,21 +1,28 @@
 *---------------------------------------------------------------------*
-* TOP Include: Global Data and Declarations
+* TOP Include
 *---------------------------------------------------------------------*
 TABLES: mara, afpo, rsapetdtl, prps, zkcgt_wbs_recog.
 
 DATA: go_controller TYPE REF TO zcl_a2d_controller,
-      go_model_view TYPE REF TO zcl_a2d_revenue_recog_consmat,
-      gs_parameter  TYPE zcl_a2d_revenue_recog_consmat=>ts_parameter,
-      gs_bdcdata    TYPE bdcdata,
-      gt_r_psphi    TYPE RANGE OF prps-psphi,
-      gt_r_pspnr    TYPE RANGE OF prps-pspnr,
-      gt_r_werks    TYPE RANGE OF afpo-dwerk,
-      gt_r_charg    TYPE RANGE OF afpo-charg,
-      gt_r_matnr    TYPE RANGE OF mara-matnr,
-      gt_r_mtart    TYPE RANGE OF mara-mtart,
-      gt_r_exdate   TYPE RANGE OF rsapetdtl-extraction_date,
-      gt_r_amtsr    TYPE RANGE OF zkcgt_wbs_recog-amount_source,
-      gt_r_ernam    TYPE RANGE OF zkcgt_wbs_recog-ernam,
-      gt_r_erdat    TYPE RANGE OF zkcgt_wbs_recog-erdat,
-      gt_r_status   TYPE RANGE OF zkcgt_wbs_recog-status,
-      gv_batrel     TYPE flag.
+      go_model_view TYPE REF TO zcl_a2d_revenue_recog_consmat.
+
+DATA: gs_parameter TYPE zcl_a2d_model_selection_facade=>ty_s_parameters,
+      ls_parameters TYPE zcl_a2d_model_selection_facade=>ty_s_parameters.
+
+" Selection tables
+DATA: gt_r_psphi  TYPE STANDARD TABLE OF rsapetdtl-psphi,
+      gt_r_pspnr  TYPE STANDARD TABLE OF prps-pspnr,
+      gt_r_werks  TYPE STANDARD TABLE OF afpo-werks,
+      gt_r_charg  TYPE STANDARD TABLE OF afpo-charg,
+      gt_r_matnr  TYPE STANDARD TABLE OF mara-matnr,
+      gt_r_mtart  TYPE STANDARD TABLE OF mara-mtart,
+      gt_r_exdate TYPE STANDARD TABLE OF afpo-edatu,
+      gt_r_amtsr  TYPE STANDARD TABLE OF zkcgt_wbs_recog-amtsr,
+      gt_r_ernam  TYPE STANDARD TABLE OF zkcgt_wbs_recog-ernam,
+      gt_r_erdat  TYPE STANDARD TABLE OF zkcgt_wbs_recog-erdat,
+      gt_r_status TYPE STANDARD TABLE OF zkcgt_wbs_recog-status.
+
+DATA: gv_batrel TYPE flag.
+
+" For BDC routines
+DATA: gs_bdcdata TYPE bdcdata.
