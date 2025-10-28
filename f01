@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Include  ZTR_A2D_REV_RECOG_CONSMAT_F01
+*& Include ZTR_A2D_REV_RECOG_CONSMAT_F01
 *&---------------------------------------------------------------------*
 
 *---------------------------------------------------------------------*
@@ -9,7 +9,7 @@ FORM init_data.
   DATA: lt_mtart TYPE STANDARD TABLE OF mara-mtart,
         lv_datum TYPE datum.
 
-  CLEAR: r_mtart[], r_mtart.
+  CLEAR: s_mtart[], s_mtart.
   SELECT SINGLE * FROM ztxca_param INTO @DATA(ls_param)
     WHERE kdef01 = 'ZKROHRECOG_MATTYPE_SELECTION'
       AND kval03 = 'MTART'
@@ -19,61 +19,59 @@ FORM init_data.
     IF NOT ls_param-pval02 IS INITIAL.
       SPLIT ls_param-pval02 AT ',' INTO TABLE lt_mtart.
       LOOP AT lt_mtart INTO DATA(ls_mtart) WHERE table_line IS NOT INITIAL.
-        r_mtart-sign = 'I'.
-        r_mtart-option = 'EQ'.
-        r_mtart-low = ls_mtart.
-        APPEND r_mtart.
+        s_mtart-sign = 'I'.
+        s_mtart-option = 'EQ'.
+        s_mtart-low = ls_mtart.
+        APPEND s_mtart.
       ENDLOOP.
     ENDIF.
 
     IF NOT ls_param-pval03 IS INITIAL.
       SPLIT ls_param-pval03 AT ',' INTO TABLE lt_mtart.
       LOOP AT lt_mtart INTO ls_mtart WHERE table_line IS NOT INITIAL.
-        r_mtart-sign = 'I'.
-        r_mtart-option = 'EQ'.
-        r_mtart-low = ls_mtart.
-        APPEND r_mtart.
+        s_mtart-sign = 'I'.
+        s_mtart-option = 'EQ'.
+        s_mtart-low = ls_mtart.
+        APPEND s_mtart.
       ENDLOOP.
     ENDIF.
 
     IF NOT ls_param-pval04 IS INITIAL.
       SPLIT ls_param-pval04 AT ',' INTO TABLE lt_mtart.
       LOOP AT lt_mtart INTO ls_mtart WHERE table_line IS NOT INITIAL.
-        r_mtart-sign = 'I'.
-        r_mtart-option = 'EQ'.
-        r_mtart-low = ls_mtart.
-        APPEND r_mtart.
+        s_mtart-sign = 'I'.
+        s_mtart-option = 'EQ'.
+        s_mtart-low = ls_mtart.
+        APPEND s_mtart.
       ENDLOOP.
     ENDIF.
   ENDIF.
 
-  CLEAR: r_exdate[], r_exdate.
+  CLEAR: s_exdate[], s_exdate.
   lv_datum = sy-datum.
 
   CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
-    EXPORTING
-      day_in            = lv_datum
-    IMPORTING
-      last_day_of_month = lv_datum.
+    EXPORTING day_in = lv_datum
+    IMPORTING last_day_of_month = lv_datum.
   IF sy-subrc = 0.
-    r_exdate-sign = 'I'.
-    r_exdate-option = 'LE'.
-    r_exdate-low = lv_datum.
-    APPEND r_exdate.
+    s_exdate-sign = 'I'.
+    s_exdate-option = 'LE'.
+    s_exdate-low = lv_datum.
+    APPEND s_exdate.
   ENDIF.
 
-  lr_psphi  = r_psphi[].
-  lr_pspnr  = r_pspnr[].
-  lr_werks  = r_werks[].
-  lr_charg  = r_charg[].
-  lr_matnr  = r_matnr[].
-  lr_mtart  = r_mtart[].
-  lr_exdate = r_exdate[].
-  lr_amtsr  = r_amtsr[].
-  lr_ernam  = r_ernam[].
-  lr_erdat  = r_erdat[].
-  lr_status = r_status[].
-  lv_batrel = p_batrel.
+  gt_r_psphi  = s_psphi[].
+  gt_r_pspnr  = s_pspnr[].
+  gt_r_werks  = s_werks[].
+  gt_r_charg  = s_charg[].
+  gt_r_matnr  = s_matnr[].
+  gt_r_mtart  = s_mtart[].
+  gt_r_exdate = s_exdate[].
+  gt_r_amtsr  = s_amtsr[].
+  gt_r_ernam  = s_ernam[].
+  gt_r_erdat  = s_erdat[].
+  gt_r_status = s_status[].
+  gv_batrel   = p_batrel.
 ENDFORM.
 
 *---------------------------------------------------------------------*
@@ -84,30 +82,30 @@ FORM validate_data.
     WHEN 'EXECUTE'.
       CASE abap_true.
         WHEN p_rb1.
-          IF r_werks[] IS INITIAL.
+          IF s_werks[] IS INITIAL.
             MESSAGE 'Please Maintain Plant' TYPE 'E'.
           ENDIF.
-          IF r_charg[] IS INITIAL.
+          IF s_charg[] IS INITIAL.
             MESSAGE 'Please Maintain Batch' TYPE 'E'.
           ENDIF.
         WHEN p_rb2.
-          IF r_psphi[] IS INITIAL AND r_pspnr[] IS INITIAL.
+          IF s_psphi[] IS INITIAL AND s_pspnr[] IS INITIAL.
             MESSAGE 'Please Maintain either Project or WBS' TYPE 'E'.
           ENDIF.
       ENDCASE.
     WHEN 'REC'.
-      r_psphi[]  = lr_psphi[].
-      r_pspnr[]  = lr_pspnr[].
-      r_werks[]  = lr_werks[].
-      r_charg[]  = lr_charg[].
-      r_matnr[]  = lr_matnr[].
-      r_mtart[]  = lr_mtart[].
-      r_exdate[] = lr_exdate[].
-      r_amtsr[]  = lr_amtsr[].
-      r_ernam[]  = lr_ernam[].
-      r_erdat[]  = lr_erdat[].
-      r_status[] = lr_status[].
-      p_batrel   = lv_batrel.
+      s_psphi[]  = gt_r_psphi[].
+      s_pspnr[]  = gt_r_pspnr[].
+      s_werks[]  = gt_r_werks[].
+      s_charg[]  = gt_r_charg[].
+      s_matnr[]  = gt_r_matnr[].
+      s_mtart[]  = gt_r_mtart[].
+      s_exdate[] = gt_r_exdate[].
+      s_amtsr[]  = gt_r_amtsr[].
+      s_ernam[]  = gt_r_ernam[].
+      s_erdat[]  = gt_r_erdat[].
+      s_status[] = gt_r_status[].
+      p_batrel   = gv_batrel.
   ENDCASE.
 ENDFORM.
 
