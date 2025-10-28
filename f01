@@ -1,72 +1,151 @@
-METHOD COPY_REPORT_TO_STRUCT.
+*&---------------------------------------------------------------------*
+*& Include  ZTR_A2D_REV_RECOG_CONSMAT_F01
+*&---------------------------------------------------------------------*
 
-* local definition
-  DATA: lo_struct_descr       TYPE REF TO cl_abap_structdescr,
-        lt_component          TYPE cl_abap_structdescr=>component_table,
-        ls_component          TYPE abap_componentdescr,
-        lv_struct_field_name  TYPE string,
-        lv_report_field_name        TYPE string.
+*---------------------------------------------------------------------*
+* INIT_DATA
+*---------------------------------------------------------------------*
+FORM init_data.
+  DATA: lt_mtart TYPE STANDARD TABLE OF mara-mtart,
+        lv_datum TYPE datum.
 
-  FIELD-SYMBOLS: <lv_report_field> TYPE ANY,
-                 <lv_struct_field> TYPE ANY.
+  CLEAR: r_mtart[], r_mtart.
+  SELECT SINGLE * FROM ztxca_param INTO @DATA(ls_param)
+    WHERE kdef01 = 'ZKROHRECOG_MATTYPE_SELECTION'
+      AND kval03 = 'MTART'
+      AND pval01 = 'X'.
 
-* Assert input
-  ASSERT iv_direction = gc_direction_r2s OR iv_direction = gc_direction_s2r.
-  ASSERT mv_report_id IS NOT INITIAL.
+  IF sy-subrc = 0.
+    IF NOT ls_param-pval02 IS INITIAL.
+      SPLIT ls_param-pval02 AT ',' INTO TABLE lt_mtart.
+      LOOP AT lt_mtart INTO DATA(ls_mtart) WHERE table_line IS NOT INITIAL.
+        r_mtart-sign = 'I'.
+        r_mtart-option = 'EQ'.
+        r_mtart-low = ls_mtart.
+        APPEND r_mtart.
+      ENDLOOP.
+    ENDIF.
 
-* copy data
+    IF NOT ls_param-pval03 IS INITIAL.
+      SPLIT ls_param-pval03 AT ',' INTO TABLE lt_mtart.
+      LOOP AT lt_mtart INTO ls_mtart WHERE table_line IS NOT INITIAL.
+        r_mtart-sign = 'I'.
+        r_mtart-option = 'EQ'.
+        r_mtart-low = ls_mtart.
+        APPEND r_mtart.
+      ENDLOOP.
+    ENDIF.
 
-  IF iv_direction = gc_direction_r2s.
-    lo_struct_descr ?=  cl_abap_typedescr=>describe_by_data( cs_structure ).
-  ELSE.
-    lo_struct_descr ?=  cl_abap_typedescr=>describe_by_data( is_structure ).
+    IF NOT ls_param-pval04 IS INITIAL.
+      SPLIT ls_param-pval04 AT ',' INTO TABLE lt_mtart.
+      LOOP AT lt_mtart INTO ls_mtart WHERE table_line IS NOT INITIAL.
+        r_mtart-sign = 'I'.
+        r_mtart-option = 'EQ'.
+        r_mtart-low = ls_mtart.
+        APPEND r_mtart.
+      ENDLOOP.
+    ENDIF.
   ENDIF.
 
-  IF lo_struct_descr IS BOUND.
-    " create field catalog from DDIC
-    lt_component = lo_struct_descr->get_components( ).
+  CLEAR: r_exdate[], r_exdate.
+  lv_datum = sy-datum.
 
-    LOOP AT lt_component INTO ls_component.
-      " unassign field symbols
-      UNASSIGN <lv_report_field>.
-      UNASSIGN <lv_struct_field>.
-
-      " determine structure and report field name
-      lv_struct_field_name = ls_component-name.
-      TRANSLATE lv_struct_field_name TO UPPER CASE.
-
-      lv_report_field_name = ls_component-name.
-      CONCATENATE `(` mv_report_id `)` ls_component-name INTO lv_report_field_name.
-      IF ls_component-name(2) = 'r_' OR ls_component-name(2) = 'R_'.
-        CONCATENATE lv_report_field_name '[]' INTO lv_report_field_name.
-      ENDIF.
-      TRANSLATE lv_report_field_name TO UPPER CASE.
-
-      " assign field-symbols
-      IF iv_direction = gc_direction_r2s.
-        ASSIGN COMPONENT lv_struct_field_name OF STRUCTURE cs_structure TO <lv_struct_field>.
-      ELSE.
-        ASSIGN COMPONENT lv_struct_field_name OF STRUCTURE is_structure TO <lv_struct_field>.
-      ENDIF.
-      ASSERT <lv_struct_field> IS ASSIGNED. "this must be okay, as we are in a loop over the components
-
-      ASSIGN (lv_report_field_name) TO <lv_report_field>.
-      IF <lv_report_field> IS NOT ASSIGNED.
-        " parameter not avaialbe in report; thats okay
-        CONTINUE.
-      ENDIF.
-
-      " Copy report data to structure or vice versa
-      IF iv_direction = gc_direction_r2s.
-        <lv_struct_field> = <lv_report_field>.
-      ELSEIF  iv_direction = gc_direction_s2r.
-        <lv_report_field> = <lv_struct_field>.
-      ELSE.
-        ASSERT 1 = 2.
-        " You need to follow the naming convertions for the report parameters
-        " R_ Range tables
-        " V_ Parameters
-      ENDIF.
-    ENDLOOP.
+  CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
+    EXPORTING
+      day_in            = lv_datum
+    IMPORTING
+      last_day_of_month = lv_datum.
+  IF sy-subrc = 0.
+    r_exdate-sign = 'I'.
+    r_exdate-option = 'LE'.
+    r_exdate-low = lv_datum.
+    APPEND r_exdate.
   ENDIF.
-ENDMETHOD.
+
+  lr_psphi  = r_psphi[].
+  lr_pspnr  = r_pspnr[].
+  lr_werks  = r_werks[].
+  lr_charg  = r_charg[].
+  lr_matnr  = r_matnr[].
+  lr_mtart  = r_mtart[].
+  lr_exdate = r_exdate[].
+  lr_amtsr  = r_amtsr[].
+  lr_ernam  = r_ernam[].
+  lr_erdat  = r_erdat[].
+  lr_status = r_status[].
+  lv_batrel = p_batrel.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* VALIDATE_DATA
+*---------------------------------------------------------------------*
+FORM validate_data.
+  CASE sy-ucomm.
+    WHEN 'EXECUTE'.
+      CASE abap_true.
+        WHEN p_rb1.
+          IF r_werks[] IS INITIAL.
+            MESSAGE 'Please Maintain Plant' TYPE 'E'.
+          ENDIF.
+          IF r_charg[] IS INITIAL.
+            MESSAGE 'Please Maintain Batch' TYPE 'E'.
+          ENDIF.
+        WHEN p_rb2.
+          IF r_psphi[] IS INITIAL AND r_pspnr[] IS INITIAL.
+            MESSAGE 'Please Maintain either Project or WBS' TYPE 'E'.
+          ENDIF.
+      ENDCASE.
+    WHEN 'REC'.
+      r_psphi[]  = lr_psphi[].
+      r_pspnr[]  = lr_pspnr[].
+      r_werks[]  = lr_werks[].
+      r_charg[]  = lr_charg[].
+      r_matnr[]  = lr_matnr[].
+      r_mtart[]  = lr_mtart[].
+      r_exdate[] = lr_exdate[].
+      r_amtsr[]  = lr_amtsr[].
+      r_ernam[]  = lr_ernam[].
+      r_erdat[]  = lr_erdat[].
+      r_status[] = lr_status[].
+      p_batrel   = lv_batrel.
+  ENDCASE.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* MODIFY_SCREEN
+*---------------------------------------------------------------------*
+FORM modify_screen.
+  LOOP AT SCREEN.
+    CASE screen-group1.
+      WHEN 'M1'. IF p_rb1 IS INITIAL. screen-active = 0. ENDIF.
+      WHEN 'M2'. IF p_rb2 IS INITIAL. screen-active = 0. ENDIF.
+      WHEN 'M3'. IF p_rb3 IS INITIAL. screen-active = 0. ENDIF.
+      WHEN 'M4'. IF NOT p_rb1 IS INITIAL. screen-active = 0. ENDIF.
+      WHEN 'M5'. IF NOT p_rb2 IS INITIAL. screen-active = 0. ENDIF.
+    ENDCASE.
+    MODIFY SCREEN.
+  ENDLOOP.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* BDC_DYNPRO
+*---------------------------------------------------------------------*
+FORM bdc_dynpro USING iv_program iv_dynpro
+                CHANGING ct_bdcdata TYPE bdcdata_tab.
+  CLEAR ls_bdcdata.
+  ls_bdcdata-program  = iv_program.
+  ls_bdcdata-dynpro   = iv_dynpro.
+  ls_bdcdata-dynbegin = 'X'.
+  APPEND ls_bdcdata TO ct_bdcdata.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* BDC_FIELD
+*---------------------------------------------------------------------*
+FORM bdc_field USING iv_fnam iv_fval
+               CHANGING ct_bdcdata TYPE bdcdata_tab.
+  CLEAR ls_bdcdata.
+  ls_bdcdata-fnam = iv_fnam.
+  WRITE iv_fval TO ls_bdcdata-fval LEFT-JUSTIFIED.
+  APPEND ls_bdcdata TO ct_bdcdata.
+ENDFORM.
