@@ -1,57 +1,22 @@
-*&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_TOP
-*&---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+*  TOP Include: Global Data and Declarations
+*---------------------------------------------------------------------*
+TABLES: mara, afpo, rsapetdtl, prps, zkcgt_wbs_recog.
 
-TABLES: aufk, afih, afko, jest, resb, jsto, tj30, tj30t.
-
-INCLUDE <icon>.   " For traffic light icons in ALV
-
-"--------------------------------------------------------------------*
-" Type Definitions
-"--------------------------------------------------------------------*
-TYPES: BEGIN OF lty_order,
-         aufnr TYPE aufk-aufnr,
-         auart TYPE aufk-auart,
-         iwerk TYPE afih-iwerk,
-         erdat TYPE aufk-erdat,
-         gstrp TYPE afko-gstrp,
-         gltrp TYPE afko-gltrp,
-         objnr TYPE aufk-objnr,
-       END OF lty_order.
-
-TYPES: BEGIN OF lty_log,
-         aufnr   TYPE aufk-aufnr,   " Order
-         auart   TYPE aufk-auart,   " Order Type
-         iwerk   TYPE afih-iwerk,   " Plant
-         erdat   TYPE aufk-erdat,   " Created On
-         gstrp   TYPE afko-gstrp,   " Basic Start
-         gltrp   TYPE afko-gltrp,   " Basic Finish
-         msgtxt  TYPE string,       " Status Message
-         light   TYPE icon_d,       " Result (traffic light)
-       END OF lty_log.
-
-"--------------------------------------------------------------------*
-" Global internal tables / variables
-"--------------------------------------------------------------------*
-DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
-      gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY,
-      gs_log    TYPE lty_log.
-
-DATA: gv_user            TYPE sy-uname,
-      gv_now             TYPE sy-datum,
-      gv_user_authorized TYPE abap_bool VALUE abap_true.
-
-"--------------------------------------------------------------------*
-" Constants
-"--------------------------------------------------------------------*
-CONSTANTS:
-  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
-  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
-
-CONSTANTS:
-  gc_light_green TYPE icon_d VALUE icon_led_green,     " Kitting complete
-  gc_light_red   TYPE icon_d VALUE icon_led_red,       " Incomplete
-  gc_light_inact TYPE icon_d VALUE icon_led_inactive.  " No components
-
-" KCMP internal status (filled dynamically later)
-DATA: gc_estat TYPE tj30-estat.
+DATA: go_controller TYPE REF TO zcl_a2d_controller,
+      go_model_view TYPE REF TO zcl_a2d_revenue_recog_consmat,
+      gs_parameter  TYPE zcl_a2d_revenue_recog_consmat=>ts_parameter,
+      ls_bdcdata    TYPE bdcdata,
+* Selection Screen Values
+      lr_psphi      TYPE RANGE OF prps-psphi,
+      lr_pspnr      TYPE RANGE OF prps-pspnr,
+      lr_werks      TYPE RANGE OF afpo-dwerk,
+      lr_charg      TYPE RANGE OF afpo-charg,
+      lr_matnr      TYPE RANGE OF mara-matnr,
+      lr_mtart      TYPE RANGE OF mara-mtart,
+      lr_exdate     TYPE RANGE OF rsapetdtl-extraction_date,
+      lr_amtsr      TYPE RANGE OF zkcgt_wbs_recog-amount_source,
+      lr_ernam      TYPE RANGE OF zkcgt_wbs_recog-ernam,
+      lr_erdat      TYPE RANGE OF zkcgt_wbs_recog-erdat,
+      lr_status     TYPE RANGE OF zkcgt_wbs_recog-status,
+      lv_batrel     TYPE flag.
