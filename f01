@@ -1,395 +1,271 @@
+Here’s my code,
+
 *&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_F01
+*& Report  ZK_REVENUE_RECOGNITION_CONSMAT
 *&---------------------------------------------------------------------*
+REPORT ZTR_A2D_REV_RECOG_CONSMAT.
+
+TABLES:mara,afpo,rsapetdtl,prps,zkcgt_wbs_recog.
+
+DATA:go_controller TYPE REF TO zcl_A2D_controller,
+     go_model_view TYPE REF TO zcl_A2D_revenue_recog_consmat,
+     gs_parameter  TYPE zcl_a2d_revenue_recog_consmat=>ts_parameter,
+     ls_bdcdata    TYPE bdcdata,
+*Selection Screen Values
+     lr_psphi      TYPE RANGE OF prps-psphi,
+     lr_pspnr      TYPE RANGE OF prps-pspnr,
+     lr_werks      TYPE RANGE OF afpo-dwerk,
+     lr_charg      TYPE RANGE OF afpo-charg,
+     lr_matnr      TYPE RANGE OF mara-matnr,
+     lr_mtart      TYPE RANGE OF mara-mtart,
+     lr_exdate     TYPE RANGE OF rsapetdtl-extraction_date,
+     lr_amtsr      TYPE RANGE OF zkcgt_wbs_recog-amount_source,
+     lr_ernam      TYPE RANGE OF zkcgt_wbs_recog-ernam,
+     lr_erdat      TYPE RANGE OF zkcgt_wbs_recog-erdat,
+     lr_status     TYPE RANGE OF zkcgt_wbs_recog-status,
+     lv_batrel     TYPE flag.
 
 *---------------------------------------------------------------------*
-* FORM: init_defaults
+*                 Selection-Screen Declaration                        *
 *---------------------------------------------------------------------*
-FORM init_defaults.
-  gv_user = sy-uname.
-  gv_now  = sy-datum.
-ENDFORM.
-
+SELECTION-SCREEN:BEGIN OF SCREEN 0100 AS SUBSCREEN,
+                 BEGIN OF BLOCK b1 WITH FRAME TITLE text-002.
+PARAMETERS:p_rb1 RADIOBUTTON GROUP rg1 DEFAULT 'X' USER-COMMAND rec,
+           p_rb2 RADIOBUTTON GROUP rg1,
+           p_rb3 RADIOBUTTON GROUP rg1.
+SELECTION-SCREEN:END OF BLOCK b1,
+                 BEGIN OF BLOCK b2 WITH FRAME TITLE text-001.
+SELECT-OPTIONS:r_psphi  FOR prps-psphi MODIF ID m2,
+               r_npspnr FOR prps-pspnr MODIF ID m3,
+               r_pspnr  FOR prps-pspnr MODIF ID m4,
+               r_werks  FOR afpo-dwerk,
+               r_charg  FOR afpo-charg MODIF ID m5,
+               r_matnr  FOR mara-matnr MODIF ID m5,
+               r_mtart  FOR mara-mtart DEFAULT 'ROH' MODIF ID m1,
+               r_exdate FOR rsapetdtl-extraction_date
+                        NO INTERVALS NO-EXTENSION MODIF ID m1,
+               r_amtsr  FOR zkcgt_wbs_recog-amount_source MODIF ID m3,
+               r_ernam  FOR zkcgt_wbs_recog-ernam  MODIF ID m3,
+               r_erdat  FOR zkcgt_wbs_recog-erdat  MODIF ID m3,
+               r_status FOR zkcgt_wbs_recog-status MODIF ID m3
+                        DEFAULT space.
+PARAMETERS p_batrel TYPE flag DEFAULT 'X' MODIF ID m1.
+SELECTION-SCREEN:END OF BLOCK b2,
+                 END OF SCREEN 0100.
 *---------------------------------------------------------------------*
-* FORM: get_kcmp_status
+*                         INITIALIZATION                              *
 *---------------------------------------------------------------------*
-FORM get_kcmp_status.
-  DATA: lv_stsma TYPE jsto-stsma,
-        lv_aufnr TYPE aufk-aufnr,
-        lv_objnr TYPE jest-objnr.
+INITIALIZATION.
+*Set Defaults
+  PERFORM init_data.
 
-  READ TABLE s_aufnr INDEX 1 INTO DATA(ls_range).
-  IF sy-subrc <> 0 OR ls_range-low IS INITIAL.
-    MESSAGE 'Please enter at least one Order Number.' TYPE 'E'.
-  ENDIF.
-
-  lv_aufnr = ls_range-low.
-  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+  CREATE OBJECT go_model_view.
+  CALL FUNCTION 'ZRFW_CONTROLLER_M01_V01_L02'
     EXPORTING
-      input  = lv_aufnr
+      iv_parameter_struct_name = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_PARAMETER'
+      iv_result_struct_name    = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_RESULT'
+      io_view_report           = go_model_view
+      io_view_alv              = go_model_view
+      io_model_selection       = go_model_view
+      iv_report_id             = sy-repid
+      iv_parameter_subscr_id   = '0100'
     IMPORTING
-      output = lv_aufnr.
+      eo_controller            = go_controller.
+  ASSERT go_controller IS BOUND.
+*---------------------------------------------------------------------*
+*                     AT SELECTION-SCREEN                             *
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM modify_screen.
 
-  CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
-
-  SELECT SINGLE stsma
-    INTO @lv_stsma
-    FROM jsto
-    WHERE objnr = @lv_objnr.
-
-  IF sy-subrc <> 0 OR lv_stsma IS INITIAL.
-    MESSAGE |Cannot determine status profile for order { lv_aufnr }.| TYPE 'E'.
+  IF go_controller IS BOUND.
+    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
+    go_controller->on_selection_screen_output( CHANGING cs_parameter = gs_parameter ).
+    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
   ENDIF.
 
-  SELECT SINGLE j~estat
-    INTO @gc_estat
-    FROM tj30 AS j
-    INNER JOIN tj30t AS t
-      ON j~estat = t~estat
-     AND j~stsma = t~stsma
-   WHERE j~stsma = @lv_stsma
-     AND t~txt04 = 'KCMP'
-     AND t~spras = @sy-langu.
+AT SELECTION-SCREEN.
+  PERFORM validate_data.
 
-  IF sy-subrc <> 0.
-    MESSAGE |KCMP user status not found for profile { lv_stsma } and language { sy-langu }.| TYPE 'E'.
+  IF go_controller IS BOUND.
+    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
+    go_controller->on_selection_screen( CHANGING cs_parameter = gs_parameter ).
+    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
   ENDIF.
-ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  INIT_DATA
+*&---------------------------------------------------------------------*
+FORM init_data.
 
-*---------------------------------------------------------------------*
-* FORM: validate_selection
-*---------------------------------------------------------------------*
-FORM validate_selection.
-  IF s_aufnr[] IS INITIAL AND s_iwerk[] IS INITIAL.
-    MESSAGE 'Please enter at least one order or plant.' TYPE 'E'.
-  ENDIF.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* FORM: fetch_orders (base dataset)
-*---------------------------------------------------------------------*
-FORM fetch_orders.
-  CLEAR gt_orders.
-
-  SELECT a~aufnr,
-         a~auart,
-         b~iwerk,
-         a~erdat,
-         c~gstrp,
-         c~gltrp,
-         a~objnr
-    FROM aufk AS a
-    INNER JOIN afih AS b ON a~aufnr = b~aufnr
-    INNER JOIN afko AS c ON a~aufnr = c~aufnr
-    WHERE a~aufnr IN @s_aufnr
-      AND a~auart IN @s_auart
-      AND b~iwerk IN @s_iwerk
-    INTO TABLE @gt_orders.
-
-  IF gt_orders IS INITIAL.
-    MESSAGE 'No orders found for selection criteria.' TYPE 'I'.
-  ENDIF.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* FORM: filter_by_jest (using JOIN instead of FOR ALL ENTRIES)
-*---------------------------------------------------------------------*
-FORM filter_by_jest.
-  DATA lt_keep TYPE TABLE OF lty_order.
-
-  SELECT DISTINCT a~aufnr,
-                  a~auart,
-                  b~iwerk,
-                  a~erdat,
-                  c~gstrp,
-                  c~gltrp,
-                  a~objnr
-    FROM aufk AS a
-    INNER JOIN afih AS b ON a~aufnr = b~aufnr
-    INNER JOIN afko AS c ON a~aufnr = c~aufnr
-    INNER JOIN jest AS j ON a~objnr = j~objnr
-    WHERE j~inact = @space
-      AND j~stat IN @s_statin
-      AND j~stat NOT IN @s_statex
-      AND a~aufnr IN @s_aufnr
-      AND b~iwerk IN @s_iwerk
-    INTO TABLE @lt_keep.
-
-  gt_orders = lt_keep.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* FORM: filter_has_components (using EXISTS)
-*---------------------------------------------------------------------*
-FORM filter_has_components.
-  DATA lt_keep TYPE TABLE OF lty_order.
-
-  SELECT a~aufnr,
-         a~auart,
-         b~iwerk,
-         a~erdat,
-         c~gstrp,
-         c~gltrp,
-         a~objnr
-    FROM aufk AS a
-    INNER JOIN afih AS b ON a~aufnr = b~aufnr
-    INNER JOIN afko AS c ON a~aufnr = c~aufnr
-    WHERE EXISTS (
-      SELECT 1 FROM resb AS r
-        WHERE r~aufnr = a~aufnr
-          AND r~xloek = @space )
-      AND a~aufnr IN @s_aufnr
-    INTO TABLE @lt_keep.
-
-  gt_orders = lt_keep.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* FORM: evaluate_kitting (optimized for S/4HANA joins)
-*---------------------------------------------------------------------*
-FORM evaluate_kitting.
-
-  "--------------------------------------------------------------*
-  " 1. Find orders with incomplete components (single SQL JOIN)
-  "--------------------------------------------------------------*
-  SELECT DISTINCT r~aufnr
-    FROM resb AS r
-    INNER JOIN aufk AS a ON a~aufnr = r~aufnr
-    WHERE a~aufnr IN @s_aufnr
-      AND a~auart IN @s_auart
-      AND r~xloek = @space
-      AND r~enmng < r~bdmng
-    INTO TABLE @DATA(lt_incomplete).
-
-  "--------------------------------------------------------------*
-  " 2. Assign traffic light and message based on completeness
-  "--------------------------------------------------------------*
-  LOOP AT gt_orders INTO DATA(ls_order).
-
-    READ TABLE lt_incomplete WITH KEY aufnr = ls_order-aufnr TRANSPORTING NO FIELDS.
-
-    IF sy-subrc = 0.
-      " Incomplete components
-      APPEND VALUE #( aufnr  = ls_order-aufnr
-                      auart  = ls_order-auart
-                      iwerk  = ls_order-iwerk
-                      erdat  = ls_order-erdat
-                      gstrp  = ls_order-gstrp
-                      gltrp  = ls_order-gltrp
-                      msgtxt = 'Incomplete components'
-                      light  = 'R' ) TO gt_log.
-    ELSE.
-      " Ready to set KCMP
-      APPEND VALUE #( aufnr  = ls_order-aufnr
-                      auart  = ls_order-auart
-                      iwerk  = ls_order-iwerk
-                      erdat  = ls_order-erdat
-                      gstrp  = ls_order-gstrp
-                      gltrp  = ls_order-gltrp
-                      msgtxt = 'Ready to set KCMP'
-                      light  = 'G' ) TO gt_log.
+  DATA:lt_mtart TYPE STANDARD TABLE OF mara-mtart,
+       lv_datum TYPE datum.
+*Default Material Types as per Custom Lookup
+  CLEAR:r_mtart[],r_mtart.
+  SELECT SINGLE * FROM ztxca_param INTO @DATA(ls_param)
+                  WHERE kdef01 = 'ZKROHRECOG_MATTYPE_SELECTION' AND
+                        kval03    = 'MTART'                        AND
+                        pval01  = 'X'.
+  IF sy-subrc = 0.
+    IF NOT ls_param-pval02 IS INITIAL.
+      CLEAR lt_mtart.
+      SPLIT ls_param-pval02 AT ',' INTO TABLE lt_mtart.
+      LOOP AT lt_mtart INTO DATA(ls_mtart)
+                       WHERE table_line IS NOT INITIAL.
+        r_mtart-sign   = 'I'.
+        r_mtart-option = 'EQ'.
+        r_mtart-low    = ls_mtart.
+        APPEND r_mtart.
+      ENDLOOP.
     ENDIF.
-
-  ENDLOOP.
-
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* FORM: check_authorizations
-*---------------------------------------------------------------------*
-FORM check_authorizations.
-  AUTHORITY-CHECK OBJECT 'C_AFKO_ACT' ID 'PS_ACTVT' FIELD '02'.
-  IF sy-subrc <> 0.
-    MESSAGE 'User not authorized to change orders.' TYPE 'E'.
-  ENDIF.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* FORM: update_user_status
-*---------------------------------------------------------------------*
-FORM update_user_status.
-  LOOP AT gt_log INTO DATA(ls_log) WHERE light = 'Y'.
-
-    DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
-          lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
-          lt_methods TYPE TABLE OF bapi_alm_order_method,
-          lt_return  TYPE TABLE OF bapiret2,
-          ls_return  TYPE bapiret2,
-          lv_action  TYPE string.
-
-    IF p_reset = abap_true.
-      lv_action = 'RESET'.
-    ELSE.
-      lv_action = 'SET'.
+    IF NOT ls_param-pval03 IS INITIAL.
+      CLEAR lt_mtart.
+      SPLIT ls_param-pval03 AT ',' INTO TABLE lt_mtart.
+      LOOP AT lt_mtart INTO ls_mtart
+                       WHERE table_line IS NOT INITIAL.
+        r_mtart-sign   = 'I'.
+        r_mtart-option = 'EQ'.
+        r_mtart-low    = ls_mtart.
+        APPEND r_mtart.
+      ENDLOOP.
     ENDIF.
-
-    APPEND VALUE #( orderid = ls_log-aufnr ) TO lt_header.
-
-    IF lv_action = 'SET'.
-      APPEND VALUE #( user_st_text = 'KCMP' langu = p_spras ) TO lt_status.
-    ELSE.
-      APPEND VALUE #( user_st_text = 'KCMP' inactive = abap_true langu = p_spras ) TO lt_status.
+    IF NOT ls_param-pval04 IS INITIAL.
+      CLEAR lt_mtart.
+      SPLIT ls_param-pval04 AT ',' INTO TABLE lt_mtart.
+      LOOP AT lt_mtart INTO ls_mtart
+                       WHERE table_line IS NOT INITIAL.
+        r_mtart-sign   = 'I'.
+        r_mtart-option = 'EQ'.
+        r_mtart-low    = ls_mtart.
+        APPEND r_mtart.
+      ENDLOOP.
     ENDIF.
-
-    APPEND VALUE #( refnumber = '00001' objecttype = 'HEADER'
-                    method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
-    APPEND VALUE #( refnumber = '00001' objecttype = 'USERSTATUS'
-                    method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
-    APPEND VALUE #( refnumber = '00003' objecttype = 'ORDER'
-                    method = 'SAVE' objectkey = ls_log-aufnr ) TO lt_methods.
-
-    CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
-      TABLES
-        it_header     = lt_header
-        it_methods    = lt_methods
-        it_userstatus = lt_status
-        return        = lt_return.
-
-    READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
-    IF sy-subrc = 0.
-      ls_log-msgtxt = ls_return-message(72).
-      ls_log-light  = 'R'.
-      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-    ELSE.
-      IF lv_action = 'SET'.
-        ls_log-msgtxt = |KCMP set successfully ({ gc_estat })|.
-      ELSE.
-        ls_log-msgtxt = |KCMP reset successfully ({ gc_estat })|.
-      ENDIF.
-      ls_log-light  = 'G'.
-      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
-    ENDIF.
-
-    PERFORM release_locks USING ls_log-aufnr.
-    MODIFY gt_log FROM ls_log.
-  ENDLOOP.
-
-  COMMIT WORK.
-ENDFORM.
-
-*---------------------------------------------------------------------*
-* FORM: display_execution_log
-*---------------------------------------------------------------------*
-FORM display_execution_log.
-
-  DATA: lo_alv  TYPE REF TO cl_salv_table,
-        lo_cols TYPE REF TO cl_salv_columns,
-        lo_col  TYPE REF TO cl_salv_column,
-        lx_msg  TYPE REF TO cx_salv_msg,
-        lx_nf   TYPE REF TO cx_salv_not_found.
-
-  IF gt_log IS INITIAL.
-    MESSAGE 'No data available to display.' TYPE 'I'.
-    EXIT.
   ENDIF.
 
-  " Convert 'G'/'R' to LED icons for SALV display
-  LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
-    CASE <fs_log>-light.
-      WHEN 'G'. <fs_log>-light = icon_led_green.
-      WHEN 'R'. <fs_log>-light = icon_led_red.
-      WHEN OTHERS. <fs_log>-light = icon_led_inactive.
+*Set Month end Date as default based on Current Date
+  CLEAR:r_exdate[],r_exdate.
+  lv_datum = sy-datum.
+  CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
+    EXPORTING
+      day_in            = lv_datum
+    IMPORTING
+      last_day_of_month = lv_datum
+    EXCEPTIONS
+      day_in_no_date    = 1
+      OTHERS            = 2.
+  IF sy-subrc = 0.
+    r_exdate-sign   = 'I'.
+    r_exdate-option = 'LE'.
+    r_exdate-low    = lv_datum.
+    APPEND r_exdate.CLEAR r_exdate.
+  ENDIF.
+
+*Capture Default Values
+  lr_psphi  = r_psphi[].
+  lr_pspnr  = r_pspnr[].
+  lr_werks  = r_werks[].
+  lr_charg  = r_charg[].
+  lr_matnr  = r_matnr[].
+  lr_mtart  = r_mtart[].
+  lr_exdate = r_exdate[].
+  lr_amtsr  = r_amtsr[].
+  lr_ernam  = r_ernam[].
+  lr_erdat  = r_erdat[].
+  lr_status = r_status[].
+  lv_batrel = p_batrel.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  VALIDATE_DATA
+*&---------------------------------------------------------------------*
+FORM validate_data.
+
+*Check for Mandatory Fields
+  CASE sy-ucomm.
+    WHEN 'EXECUTE'.
+      CASE abap_true.
+        WHEN p_rb1.
+          IF r_werks[] IS INITIAL.
+            MESSAGE 'Please Maintain Plant' TYPE 'E'.
+          ENDIF.
+          IF r_charg[] IS INITIAL.
+            MESSAGE 'Please Maintain Batch' TYPE 'E'.
+          ENDIF.
+        WHEN p_rb2.
+          IF r_psphi[] IS INITIAL AND
+             r_pspnr[] IS INITIAL.
+            MESSAGE 'Please Maintain either Project or WBS' TYPE 'E'.
+          ENDIF.
+      ENDCASE.
+    WHEN 'REC'.
+      r_psphi[]  = lr_psphi[].
+      r_pspnr[]  = lr_pspnr[].
+      r_werks[]  = lr_werks[].
+      r_charg[]  = lr_charg[].
+      r_matnr[]  = lr_matnr[].
+      r_mtart[]  = lr_mtart[].
+      r_exdate[] = lr_exdate[].
+      r_amtsr[]  = lr_amtsr[].
+      r_ernam[]  = lr_ernam[].
+      r_erdat[]  = lr_erdat[].
+      r_status[] = lr_status[].
+      p_batrel   = lv_batrel.
+  ENDCASE.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  MODIFY_SCREEN
+*&---------------------------------------------------------------------*
+FORM modify_screen.
+
+  LOOP AT SCREEN.
+    CASE screen-group1.
+      WHEN 'M1'.
+        IF p_rb1 IS INITIAL.
+          screen-active = 0.
+        ENDIF.
+      WHEN 'M2'.
+        IF p_rb2 IS INITIAL.
+          screen-active = 0.
+        ENDIF.
+      WHEN 'M3'.
+        IF p_rb3 IS INITIAL.
+          screen-active = 0.
+        ENDIF.
+      WHEN 'M4'.
+        IF NOT p_rb1 IS INITIAL.
+          screen-active = 0.
+        ENDIF.
+      WHEN 'M5'.
+        IF NOT p_rb2 IS INITIAL.
+          screen-active = 0.
+        ENDIF.
     ENDCASE.
+    MODIFY SCREEN.
   ENDLOOP.
 
-  TRY.
-      cl_salv_table=>factory(
-        IMPORTING
-          r_salv_table = lo_alv
-        CHANGING
-          t_table      = gt_log ).
-
-      lo_alv->get_functions( )->set_all( abap_true ).
-      lo_cols = lo_alv->get_columns( ).
-      lo_cols->set_optimize( abap_true ).
-
-      " Column headers
-      TRY.
-          lo_col = lo_cols->get_column( 'AUFNR' ).
-          lo_col->set_medium_text( 'Order' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      TRY.
-          lo_col = lo_cols->get_column( 'AUART' ).
-          lo_col->set_medium_text( 'Order Type' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      TRY.
-          lo_col = lo_cols->get_column( 'IWERK' ).
-          lo_col->set_medium_text( 'Plant' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      TRY.
-          lo_col = lo_cols->get_column( 'ERDAT' ).
-          lo_col->set_medium_text( 'Created On' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      TRY.
-          lo_col = lo_cols->get_column( 'GSTRP' ).
-          lo_col->set_medium_text( 'Basic Start' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      TRY.
-          lo_col = lo_cols->get_column( 'GLTRP' ).
-          lo_col->set_medium_text( 'Basic Finish' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      TRY.
-          lo_col = lo_cols->get_column( 'MSGTXT' ).
-          lo_col->set_medium_text( 'Status Message' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      TRY.
-          lo_col = lo_cols->get_column( 'LIGHT' ).
-          lo_col->set_medium_text( 'Result' ).
-        CATCH cx_salv_not_found.
-      ENDTRY.
-
-      lo_alv->display( ).
-
-    CATCH cx_salv_not_found INTO lx_nf.
-      MESSAGE lx_nf->get_text( ) TYPE 'I'.
-    CATCH cx_salv_msg INTO lx_msg.
-      MESSAGE lx_msg->get_text( ) TYPE 'I'.
-  ENDTRY.
-
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  BDC_DYNPRO
+*&---------------------------------------------------------------------*
+FORM bdc_dynpro USING iv_program iv_dynpro
+                CHANGING ct_bdcdata TYPE bdcdata_tab.
+  CLEAR ls_bdcdata.
+  ls_bdcdata-program  = iv_program.
+  ls_bdcdata-dynpro   = iv_dynpro.
+  ls_bdcdata-dynbegin = 'X'.
+  APPEND ls_bdcdata TO ct_bdcdata.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  BDC_DYNPRO
+*&---------------------------------------------------------------------*
+FORM bdc_field USING iv_fnam iv_fval
+               CHANGING ct_bdcdata TYPE bdcdata_tab.
+  CLEAR ls_bdcdata.
+  ls_bdcdata-fnam = iv_fnam.
+  WRITE iv_fval TO ls_bdcdata-fval LEFT-JUSTIFIED.
+  APPEND ls_bdcdata TO ct_bdcdata.
 ENDFORM.
 
-*---------------------------------------------------------------------*
-* FORM: release_locks
-*---------------------------------------------------------------------*
-FORM release_locks USING p_aufnr TYPE aufk-aufnr.
 
-  DATA: lv_aufnr    TYPE aufk-aufnr,
-        lv_rsnum    TYPE resb-rsnum,
-        lv_prueflos TYPE qals-prueflos,
-        lv_qmnum    TYPE qmel-qmnum,
-        lv_objnr    TYPE jest-objnr.
 
-  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
-    EXPORTING
-      input  = p_aufnr
-    IMPORTING
-      output = lv_aufnr.
 
-  SELECT SINGLE rsnum INTO @lv_rsnum FROM resb WHERE aufnr = @lv_aufnr AND xloek = @space.
-  SELECT SINGLE prueflos INTO @lv_prueflos FROM qals WHERE aufnr = @lv_aufnr.
-  SELECT SINGLE qmnum INTO @lv_qmnum FROM qmel WHERE aufnr = @lv_aufnr.
-
-  CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
-
-  CALL FUNCTION 'DEQUEUE_EAUFK' EXPORTING aufnr = lv_aufnr.
-  CALL FUNCTION 'DEQUEUE_EAFKO' EXPORTING aufnr = lv_aufnr.
-  CALL FUNCTION 'DEQUEUE_ERESB' EXPORTING rsnum = lv_rsnum.
-  CALL FUNCTION 'DEQUEUE_EQALS' EXPORTING prueflos = lv_prueflos.
-  CALL FUNCTION 'DEQUEUE_EQMEL' EXPORTING qmnum = lv_qmnum.
-  CALL FUNCTION 'DEQUEUE_ALL'.
-
-ENDFORM.
