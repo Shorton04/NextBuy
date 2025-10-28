@@ -3,12 +3,12 @@
 *&---------------------------------------------------------------------*
 REPORT ztr_a2d_rev_recog_consmat.
 
-INCLUDE ztr_a2d_rev_recog_consmat_top.
-INCLUDE ztr_a2d_rev_recog_consmat_sel.
-INCLUDE ztr_a2d_rev_recog_consmat_f01.
+INCLUDE zis_a2d_rev_recog_consmat_top.
+INCLUDE zis_a2d_rev_recog_consmat_sel.
+INCLUDE zis_a2d_rev_recog_consmat_f01.
 
 *---------------------------------------------------------------------*
-*                         INITIALIZATION                              *
+* INITIALIZATION
 *---------------------------------------------------------------------*
 INITIALIZATION.
   PERFORM init_data.
@@ -28,7 +28,7 @@ INITIALIZATION.
   ASSERT go_controller IS BOUND.
 
 *---------------------------------------------------------------------*
-*                     AT SELECTION-SCREEN                             *
+* AT SELECTION-SCREEN
 *---------------------------------------------------------------------*
 AT SELECTION-SCREEN OUTPUT.
   PERFORM modify_screen.
