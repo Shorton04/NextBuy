@@ -1,34 +1,49 @@
-* ====================================================================
-* RICEFW ID.........: 7281
-* TR Number.........: D30K906626
-* Version...........: 1.0
-* Program...........: ZTR_A2R_KCMP_STATUS
-* Transaction Code..: SE38
-* Author............: HQ75177
-* Date..............: 27.10.2025
-* --------------------------------------------------------------------
-* Description.......: Set / Reset KCMP user status
-*                          for PM Orders (Kitting)
-* --------------------------------------------------------------------
-* Modification list.:
-* Date          Author    TR Number          Description
-* 27.10.2025   HQ75177    D30K907395    ENHANCED EVALUATION OF KITTING
-* ====================================================================
-REPORT ztr_a2r_kcmp_status.
+*&---------------------------------------------------------------------*
+*& Report  ZTR_A2D_REV_RECOG_CONSMAT
+*&---------------------------------------------------------------------*
+REPORT ztr_a2d_rev_recog_consmat.
 
-INCLUDE ztr_a2r_kcmp_status_top.
-INCLUDE ztr_a2r_kcmp_status_sel.
-INCLUDE ztr_a2r_kcmp_status_f01.
+INCLUDE ztr_a2d_rev_recog_consmat_top.
+INCLUDE ztr_a2d_rev_recog_consmat_sel.
+INCLUDE ztr_a2d_rev_recog_consmat_f01.
 
+*---------------------------------------------------------------------*
+*                         INITIALIZATION                              *
+*---------------------------------------------------------------------*
 INITIALIZATION.
-  PERFORM init_defaults.
+  PERFORM init_data.
 
-START-OF-SELECTION.
-  PERFORM validate_selection.
-  PERFORM fetch_orders.
-  PERFORM filter_by_jest.
-  PERFORM filter_has_components.
-  PERFORM evaluate_kitting.
-  PERFORM check_authorizations.
-  PERFORM update_user_status.
-  PERFORM display_execution_log.
+  CREATE OBJECT go_model_view.
+  CALL FUNCTION 'ZRFW_CONTROLLER_M01_V01_L02'
+    EXPORTING
+      iv_parameter_struct_name = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_PARAMETER'
+      iv_result_struct_name    = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_RESULT'
+      io_view_report           = go_model_view
+      io_view_alv              = go_model_view
+      io_model_selection       = go_model_view
+      iv_report_id             = sy-repid
+      iv_parameter_subscr_id   = '0100'
+    IMPORTING
+      eo_controller            = go_controller.
+  ASSERT go_controller IS BOUND.
+
+*---------------------------------------------------------------------*
+*                     AT SELECTION-SCREEN                             *
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM modify_screen.
+
+  IF go_controller IS BOUND.
+    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
+    go_controller->on_selection_screen_output( CHANGING cs_parameter = gs_parameter ).
+    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
+  ENDIF.
+
+AT SELECTION-SCREEN.
+  PERFORM validate_data.
+
+  IF go_controller IS BOUND.
+    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
+    go_controller->on_selection_screen( CHANGING cs_parameter = gs_parameter ).
+    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
+  ENDIF.
