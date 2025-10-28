@@ -1,5 +1,5 @@
 *---------------------------------------------------------------------*
-*  SEL Include: Selection Screen Declaration
+* SEL Include: Selection Screen Declaration
 *---------------------------------------------------------------------*
 SELECTION-SCREEN: BEGIN OF SCREEN 0100 AS SUBSCREEN,
                   BEGIN OF BLOCK b1 WITH FRAME TITLE text-002.
@@ -8,18 +8,22 @@ PARAMETERS: p_rb1 RADIOBUTTON GROUP rg1 DEFAULT 'X' USER-COMMAND rec,
             p_rb3 RADIOBUTTON GROUP rg1.
 SELECTION-SCREEN: END OF BLOCK b1,
                   BEGIN OF BLOCK b2 WITH FRAME TITLE text-001.
-SELECT-OPTIONS: r_psphi  FOR prps-psphi MODIF ID m2,
-                r_npspnr FOR prps-pspnr MODIF ID m3,
-                r_pspnr  FOR prps-pspnr MODIF ID m4,
-                r_werks  FOR afpo-dwerk,
-                r_charg  FOR afpo-charg MODIF ID m5,
-                r_matnr  FOR mara-matnr MODIF ID m5,
-                r_mtart  FOR mara-mtart DEFAULT 'ROH' MODIF ID m1,
-                r_exdate FOR rsapetdtl-extraction_date NO INTERVALS NO-EXTENSION MODIF ID m1,
-                r_amtsr  FOR zkcgt_wbs_recog-amount_source MODIF ID m3,
-                r_ernam  FOR zkcgt_wbs_recog-ernam  MODIF ID m3,
-                r_erdat  FOR zkcgt_wbs_recog-erdat  MODIF ID m3,
-                r_status FOR zkcgt_wbs_recog-status MODIF ID m3 DEFAULT space.
+
+SELECT-OPTIONS:
+  s_psphi  FOR prps-psphi MODIF ID m2,
+  s_npspnr FOR prps-pspnr MODIF ID m3,
+  s_pspnr  FOR prps-pspnr MODIF ID m4,
+  s_werks  FOR afpo-dwerk,
+  s_charg  FOR afpo-charg MODIF ID m5,
+  s_matnr  FOR mara-matnr MODIF ID m5,
+  s_mtart  FOR mara-mtart DEFAULT 'ROH' MODIF ID m1,
+  s_exdate FOR rsapetdtl-extraction_date NO INTERVALS NO-EXTENSION MODIF ID m1,
+  s_amtsr  FOR zkcgt_wbs_recog-amount_source MODIF ID m3,
+  s_ernam  FOR zkcgt_wbs_recog-ernam  MODIF ID m3,
+  s_erdat  FOR zkcgt_wbs_recog-erdat  MODIF ID m3,
+  s_status FOR zkcgt_wbs_recog-status MODIF ID m3 DEFAULT space.
+
 PARAMETERS: p_batrel TYPE flag DEFAULT 'X' MODIF ID m1.
+
 SELECTION-SCREEN: END OF BLOCK b2,
                   END OF SCREEN 0100.
