@@ -10,15 +10,15 @@ DATA: go_controller TYPE REF TO zcl_a2d_controller,
       ls_bdcdata    TYPE bdcdata.
 
 " Selection screen range holders
-DATA: gt_r_psphi  TYPE RANGE OF prps-psphi,
-      gt_r_pspnr  TYPE RANGE OF prps-pspnr,
-      gt_r_werks  TYPE RANGE OF afpo-dwerk,
-      gt_r_charg  TYPE RANGE OF afpo-charg,
-      gt_r_matnr  TYPE RANGE OF mara-matnr,
-      gt_r_mtart  TYPE RANGE OF mara-mtart,
-      gt_r_exdate TYPE RANGE OF rsapetdtl-extraction_date,
-      gt_r_amtsr  TYPE RANGE OF zkcgt_wbs_recog-amount_source,
-      gt_r_ernam  TYPE RANGE OF zkcgt_wbs_recog-ernam,
-      gt_r_erdat  TYPE RANGE OF zkcgt_wbs_recog-erdat,
-      gt_r_status TYPE RANGE OF zkcgt_wbs_recog-status,
-      gv_batrel   TYPE flag.
+DATA: lr_psphi      TYPE RANGE OF prps-psphi,
+      lr_pspnr      TYPE RANGE OF prps-pspnr,
+      lr_werks      TYPE RANGE OF afpo-dwerk,
+      lr_charg      TYPE RANGE OF afpo-charg,
+      lr_matnr      TYPE RANGE OF mara-matnr,
+      lr_mtart      TYPE RANGE OF mara-mtart,
+      lr_exdate     TYPE RANGE OF rsapetdtl-extraction_date,
+      lr_amtsr      TYPE RANGE OF zkcgt_wbs_recog-amount_source,
+      lr_ernam      TYPE RANGE OF zkcgt_wbs_recog-ernam,
+      lr_erdat      TYPE RANGE OF zkcgt_wbs_recog-erdat,
+      lr_status     TYPE RANGE OF zkcgt_wbs_recog-status,
+      lv_batrel     TYPE flag.
