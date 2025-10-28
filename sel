@@ -1,28 +1,30 @@
 *---------------------------------------------------------------------*
-* SEL Include – Selection Screen
+* SEL Include: Selection Screen Definitions
 *---------------------------------------------------------------------*
+SELECTION-SCREEN: BEGIN OF SCREEN 0100 AS SUBSCREEN,
+                  BEGIN OF BLOCK b1 WITH FRAME TITLE text-002.
 
-SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
-PARAMETERS: p_rb1 RADIOBUTTON GROUP g1 DEFAULT 'X' USER-COMMAND rad,
-            p_rb2 RADIOBUTTON GROUP g1,
-            p_rb3 RADIOBUTTON GROUP g1.
+PARAMETERS: p_rb1 RADIOBUTTON GROUP rg1 DEFAULT 'X' USER-COMMAND rec,
+            p_rb2 RADIOBUTTON GROUP rg1,
+            p_rb3 RADIOBUTTON GROUP rg1.
 
-SELECTION-SCREEN END OF BLOCK b1.
+SELECTION-SCREEN: END OF BLOCK b1,
+                  BEGIN OF BLOCK b2 WITH FRAME TITLE text-001.
 
-SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
-SELECT-OPTIONS:
-  s_psphi  FOR prps-psphi MODIF ID m1,
-  s_pspnr  FOR prps-pspnr MODIF ID m2,
-  s_werks  FOR afpo-werks  MODIF ID m1,
-  s_charg  FOR afpo-charg  MODIF ID m1,
-  s_matnr  FOR mara-matnr  MODIF ID m1,
-  s_mtart  FOR mara-mtart,
-  s_exdate FOR afpo-edatu,
-  s_amtsr  FOR zkcgt_wbs_recog-amtsr,
-  s_ernam  FOR zkcgt_wbs_recog-ernam,
-  s_erdat  FOR zkcgt_wbs_recog-erdat,
-  s_status FOR zkcgt_wbs_recog-status.
+SELECT-OPTIONS: r_psphi  FOR prps-psphi MODIF ID m2,
+                r_npspnr FOR prps-pspnr MODIF ID m3,
+                r_pspnr  FOR prps-pspnr MODIF ID m4,
+                r_werks  FOR afpo-dwerk,
+                r_charg  FOR afpo-charg MODIF ID m5,
+                r_matnr  FOR mara-matnr MODIF ID m5,
+                r_mtart  FOR mara-mtart MODIF ID m1,
+                r_exdate FOR rsapetdtl-extraction_date NO INTERVALS NO-EXTENSION MODIF ID m1,
+                r_amtsr  FOR zkcgt_wbs_recog-amount_source MODIF ID m3,
+                r_ernam  FOR zkcgt_wbs_recog-ernam MODIF ID m3,
+                r_erdat  FOR zkcgt_wbs_recog-erdat MODIF ID m3,
+                r_status FOR zkcgt_wbs_recog-status MODIF ID m3 DEFAULT space.
 
-PARAMETERS: p_batrel AS CHECKBOX DEFAULT 'X' MODIF ID m3.
+PARAMETERS: p_batrel TYPE flag DEFAULT 'X' MODIF ID m1.
 
-SELECTION-SCREEN END OF BLOCK b2.
+SELECTION-SCREEN: END OF BLOCK b2,
+                  END OF SCREEN 0100.
