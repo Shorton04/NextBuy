@@ -1,119 +1,29 @@
-Here’s my code,
-
-*&---------------------------------------------------------------------*
-*& Report  ZK_REVENUE_RECOGNITION_CONSMAT
-*&---------------------------------------------------------------------*
-REPORT ZTR_A2D_REV_RECOG_CONSMAT.
-
-TABLES:mara,afpo,rsapetdtl,prps,zkcgt_wbs_recog.
-
-DATA:go_controller TYPE REF TO zcl_A2D_controller,
-     go_model_view TYPE REF TO zcl_A2D_revenue_recog_consmat,
-     gs_parameter  TYPE zcl_a2d_revenue_recog_consmat=>ts_parameter,
-     ls_bdcdata    TYPE bdcdata,
-*Selection Screen Values
-     lr_psphi      TYPE RANGE OF prps-psphi,
-     lr_pspnr      TYPE RANGE OF prps-pspnr,
-     lr_werks      TYPE RANGE OF afpo-dwerk,
-     lr_charg      TYPE RANGE OF afpo-charg,
-     lr_matnr      TYPE RANGE OF mara-matnr,
-     lr_mtart      TYPE RANGE OF mara-mtart,
-     lr_exdate     TYPE RANGE OF rsapetdtl-extraction_date,
-     lr_amtsr      TYPE RANGE OF zkcgt_wbs_recog-amount_source,
-     lr_ernam      TYPE RANGE OF zkcgt_wbs_recog-ernam,
-     lr_erdat      TYPE RANGE OF zkcgt_wbs_recog-erdat,
-     lr_status     TYPE RANGE OF zkcgt_wbs_recog-status,
-     lv_batrel     TYPE flag.
-
 *---------------------------------------------------------------------*
-*                 Selection-Screen Declaration                        *
+*  F01 Include: FORM Routines
 *---------------------------------------------------------------------*
-SELECTION-SCREEN:BEGIN OF SCREEN 0100 AS SUBSCREEN,
-                 BEGIN OF BLOCK b1 WITH FRAME TITLE text-002.
-PARAMETERS:p_rb1 RADIOBUTTON GROUP rg1 DEFAULT 'X' USER-COMMAND rec,
-           p_rb2 RADIOBUTTON GROUP rg1,
-           p_rb3 RADIOBUTTON GROUP rg1.
-SELECTION-SCREEN:END OF BLOCK b1,
-                 BEGIN OF BLOCK b2 WITH FRAME TITLE text-001.
-SELECT-OPTIONS:r_psphi  FOR prps-psphi MODIF ID m2,
-               r_npspnr FOR prps-pspnr MODIF ID m3,
-               r_pspnr  FOR prps-pspnr MODIF ID m4,
-               r_werks  FOR afpo-dwerk,
-               r_charg  FOR afpo-charg MODIF ID m5,
-               r_matnr  FOR mara-matnr MODIF ID m5,
-               r_mtart  FOR mara-mtart DEFAULT 'ROH' MODIF ID m1,
-               r_exdate FOR rsapetdtl-extraction_date
-                        NO INTERVALS NO-EXTENSION MODIF ID m1,
-               r_amtsr  FOR zkcgt_wbs_recog-amount_source MODIF ID m3,
-               r_ernam  FOR zkcgt_wbs_recog-ernam  MODIF ID m3,
-               r_erdat  FOR zkcgt_wbs_recog-erdat  MODIF ID m3,
-               r_status FOR zkcgt_wbs_recog-status MODIF ID m3
-                        DEFAULT space.
-PARAMETERS p_batrel TYPE flag DEFAULT 'X' MODIF ID m1.
-SELECTION-SCREEN:END OF BLOCK b2,
-                 END OF SCREEN 0100.
-*---------------------------------------------------------------------*
-*                         INITIALIZATION                              *
-*---------------------------------------------------------------------*
-INITIALIZATION.
-*Set Defaults
-  PERFORM init_data.
 
-  CREATE OBJECT go_model_view.
-  CALL FUNCTION 'ZRFW_CONTROLLER_M01_V01_L02'
-    EXPORTING
-      iv_parameter_struct_name = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_PARAMETER'
-      iv_result_struct_name    = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_RESULT'
-      io_view_report           = go_model_view
-      io_view_alv              = go_model_view
-      io_model_selection       = go_model_view
-      iv_report_id             = sy-repid
-      iv_parameter_subscr_id   = '0100'
-    IMPORTING
-      eo_controller            = go_controller.
-  ASSERT go_controller IS BOUND.
-*---------------------------------------------------------------------*
-*                     AT SELECTION-SCREEN                             *
-*---------------------------------------------------------------------*
-AT SELECTION-SCREEN OUTPUT.
-  PERFORM modify_screen.
-
-  IF go_controller IS BOUND.
-    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
-    go_controller->on_selection_screen_output( CHANGING cs_parameter = gs_parameter ).
-    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
-  ENDIF.
-
-AT SELECTION-SCREEN.
-  PERFORM validate_data.
-
-  IF go_controller IS BOUND.
-    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
-    go_controller->on_selection_screen( CHANGING cs_parameter = gs_parameter ).
-    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
-  ENDIF.
 *&---------------------------------------------------------------------*
 *&      Form  INIT_DATA
 *&---------------------------------------------------------------------*
 FORM init_data.
 
-  DATA:lt_mtart TYPE STANDARD TABLE OF mara-mtart,
-       lv_datum TYPE datum.
-*Default Material Types as per Custom Lookup
-  CLEAR:r_mtart[],r_mtart.
+  DATA: lt_mtart TYPE STANDARD TABLE OF mara-mtart,
+        lv_datum TYPE datum.
+
+  CLEAR: r_mtart[], r_mtart.
   SELECT SINGLE * FROM ztxca_param INTO @DATA(ls_param)
-                  WHERE kdef01 = 'ZKROHRECOG_MATTYPE_SELECTION' AND
-                        kval03    = 'MTART'                        AND
-                        pval01  = 'X'.
+    WHERE kdef01 = 'ZKROHRECOG_MATTYPE_SELECTION'
+      AND kval03 = 'MTART'
+      AND pval01 = 'X'.
   IF sy-subrc = 0.
     IF NOT ls_param-pval02 IS INITIAL.
       CLEAR lt_mtart.
       SPLIT ls_param-pval02 AT ',' INTO TABLE lt_mtart.
       LOOP AT lt_mtart INTO DATA(ls_mtart)
-                       WHERE table_line IS NOT INITIAL.
-        r_mtart-sign   = 'I'.
+        WHERE table_line IS NOT INITIAL.
+        r_mtart-sign = 'I'.
         r_mtart-option = 'EQ'.
-        r_mtart-low    = ls_mtart.
+        r_mtart-low = ls_mtart.
         APPEND r_mtart.
       ENDLOOP.
     ENDIF.
@@ -121,10 +31,10 @@ FORM init_data.
       CLEAR lt_mtart.
       SPLIT ls_param-pval03 AT ',' INTO TABLE lt_mtart.
       LOOP AT lt_mtart INTO ls_mtart
-                       WHERE table_line IS NOT INITIAL.
-        r_mtart-sign   = 'I'.
+        WHERE table_line IS NOT INITIAL.
+        r_mtart-sign = 'I'.
         r_mtart-option = 'EQ'.
-        r_mtart-low    = ls_mtart.
+        r_mtart-low = ls_mtart.
         APPEND r_mtart.
       ENDLOOP.
     ENDIF.
@@ -132,34 +42,28 @@ FORM init_data.
       CLEAR lt_mtart.
       SPLIT ls_param-pval04 AT ',' INTO TABLE lt_mtart.
       LOOP AT lt_mtart INTO ls_mtart
-                       WHERE table_line IS NOT INITIAL.
-        r_mtart-sign   = 'I'.
+        WHERE table_line IS NOT INITIAL.
+        r_mtart-sign = 'I'.
         r_mtart-option = 'EQ'.
-        r_mtart-low    = ls_mtart.
+        r_mtart-low = ls_mtart.
         APPEND r_mtart.
       ENDLOOP.
     ENDIF.
   ENDIF.
 
-*Set Month end Date as default based on Current Date
-  CLEAR:r_exdate[],r_exdate.
+  CLEAR: r_exdate[], r_exdate.
   lv_datum = sy-datum.
   CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
-    EXPORTING
-      day_in            = lv_datum
-    IMPORTING
-      last_day_of_month = lv_datum
-    EXCEPTIONS
-      day_in_no_date    = 1
-      OTHERS            = 2.
+    EXPORTING day_in = lv_datum
+    IMPORTING last_day_of_month = lv_datum.
   IF sy-subrc = 0.
-    r_exdate-sign   = 'I'.
+    r_exdate-sign = 'I'.
     r_exdate-option = 'LE'.
-    r_exdate-low    = lv_datum.
-    APPEND r_exdate.CLEAR r_exdate.
+    r_exdate-low = lv_datum.
+    APPEND r_exdate.
+    CLEAR r_exdate.
   ENDIF.
 
-*Capture Default Values
   lr_psphi  = r_psphi[].
   lr_pspnr  = r_pspnr[].
   lr_werks  = r_werks[].
@@ -174,12 +78,12 @@ FORM init_data.
   lv_batrel = p_batrel.
 
 ENDFORM.
+
 *&---------------------------------------------------------------------*
 *&      Form  VALIDATE_DATA
 *&---------------------------------------------------------------------*
 FORM validate_data.
 
-*Check for Mandatory Fields
   CASE sy-ucomm.
     WHEN 'EXECUTE'.
       CASE abap_true.
@@ -191,8 +95,7 @@ FORM validate_data.
             MESSAGE 'Please Maintain Batch' TYPE 'E'.
           ENDIF.
         WHEN p_rb2.
-          IF r_psphi[] IS INITIAL AND
-             r_pspnr[] IS INITIAL.
+          IF r_psphi[] IS INITIAL AND r_pspnr[] IS INITIAL.
             MESSAGE 'Please Maintain either Project or WBS' TYPE 'E'.
           ENDIF.
       ENDCASE.
@@ -212,6 +115,7 @@ FORM validate_data.
   ENDCASE.
 
 ENDFORM.
+
 *&---------------------------------------------------------------------*
 *&      Form  MODIFY_SCREEN
 *&---------------------------------------------------------------------*
@@ -244,6 +148,7 @@ FORM modify_screen.
   ENDLOOP.
 
 ENDFORM.
+
 *&---------------------------------------------------------------------*
 *&      Form  BDC_DYNPRO
 *&---------------------------------------------------------------------*
@@ -255,8 +160,9 @@ FORM bdc_dynpro USING iv_program iv_dynpro
   ls_bdcdata-dynbegin = 'X'.
   APPEND ls_bdcdata TO ct_bdcdata.
 ENDFORM.
+
 *&---------------------------------------------------------------------*
-*&      Form  BDC_DYNPRO
+*&      Form  BDC_FIELD
 *&---------------------------------------------------------------------*
 FORM bdc_field USING iv_fnam iv_fval
                CHANGING ct_bdcdata TYPE bdcdata_tab.
@@ -265,7 +171,3 @@ FORM bdc_field USING iv_fnam iv_fval
   WRITE iv_fval TO ls_bdcdata-fval LEFT-JUSTIFIED.
   APPEND ls_bdcdata TO ct_bdcdata.
 ENDFORM.
-
-
-
-
