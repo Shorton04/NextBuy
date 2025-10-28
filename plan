@@ -1,11 +1,22 @@
-*&---------------------------------------------------------------------*
-*& Report ZA2D_REV_RECOG_CONSMAT
-*&---------------------------------------------------------------------*
-REPORT za2d_rev_recog_consmat.
+* ====================================================================
+* Program...........: ZTR_A2D_REV_RECOG_CONSMAT
+* Transaction Code..: ZA2D_ROHRECOG
+* Author............: HQ75177
+* Date..............: 28.10.2025
+* --------------------------------------------------------------------
+* Description.......: Revenue Recognition
+*
+* --------------------------------------------------------------------
+* Modification list.:
+* Date          Author    TR Number          Description
+* 28.10.2025   HQ75177    D30K907584    Split includes
+* ====================================================================
 
-INCLUDE za2d_rev_recog_consmat_top.
-INCLUDE za2d_rev_recog_consmat_sel.
-INCLUDE za2d_rev_recog_consmat_f01.
+REPORT ztr_a2d_rev_recog_consmat.
+
+INCLUDE ztr_a2d_rev_recog_consmat_top.
+INCLUDE ztr_a2d_rev_recog_consmat_sel.
+INCLUDE ztr_a2d_rev_recog_consmat_f01.
 
 *---------------------------------------------------------------------*
 * INITIALIZATION
@@ -15,7 +26,7 @@ INITIALIZATION.
   PERFORM init_data.
 
   CREATE OBJECT go_model_view.
-  CALL FUNCTION 'ZA2D_CONTROLLER_M01_V01_L02'
+  CALL FUNCTION 'ZFM_A2D_CONTROLLER_M01_V01_L02'
     EXPORTING
       iv_parameter_struct_name = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_PARAMETER'
       iv_result_struct_name    = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_RESULT'
