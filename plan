@@ -1,53 +1,113 @@
-*&---------------------------------------------------------------------*
-*& Report ZA2D_REV_RECOG_CONSMAT
-*&---------------------------------------------------------------------*
-REPORT za2d_rev_recog_consmat.
-
-INCLUDE za2d_rev_recog_consmat_top.
-INCLUDE za2d_rev_recog_consmat_sel.
-INCLUDE za2d_rev_recog_consmat_f01.
+*---------------------------------------------------------------------*
+* Report: ZPM_ELASTOMER_UPDATE
+* Title : Checklist for Periodic Maintenance Tasks
+* Desc. : Update task list components based on characteristic & BOM
+*---------------------------------------------------------------------*
+REPORT zpm_elastomer_update.
 
 *---------------------------------------------------------------------*
-* INITIALIZATION
+* Text Elements
 *---------------------------------------------------------------------*
-INITIALIZATION.
-
-  PERFORM init_data.
-
-  CREATE OBJECT go_model_view.
-  CALL FUNCTION 'ZA2D_CONTROLLER_M01_V01_L02'
-    EXPORTING
-      iv_parameter_struct_name = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_PARAMETER'
-      iv_result_struct_name    = 'ZCL_A2D_REVENUE_RECOG_CONSMAT=>TS_RESULT'
-      io_view_report           = go_model_view
-      io_view_alv              = go_model_view
-      io_model_selection       = go_model_view
-      iv_report_id             = sy-repid
-      iv_parameter_subscr_id   = '0100'
-    IMPORTING
-      eo_controller            = go_controller.
-  ASSERT go_controller IS BOUND.
+* text-001 = 'Selection Functional Location'
+* text-002 = 'Selection for Class Characteristic Value'
+* text-003 = 'Filter on Material Text'
+* text-004 = 'Maint. Plan Selection'
+* text-005 = 'Admin Data / Status Info'
+* text-006 = 'Mode Selection'
 
 *---------------------------------------------------------------------*
-* AT SELECTION-SCREEN OUTPUT
+* SELECTION SCREEN
 *---------------------------------------------------------------------*
-AT SELECTION-SCREEN OUTPUT.
-  PERFORM modify_screen.
 
-  IF go_controller IS BOUND.
-    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
-    go_controller->on_selection_screen_output( CHANGING cs_parameter = gs_parameter ).
-    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
-  ENDIF.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS:
+  p_plant TYPE iflo-swerk OBLIGATORY,               " Maintenance Plant
+  p_floc  TYPE iflot-tplnr OBLIGATORY,              " Functional Location
+  p_class TYPE klah-class DEFAULT 'TEEXC'.          " Class
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
+PARAMETERS:
+  p_char TYPE cabn-atnam DEFAULT 'ELASTOMER_TYPE'.  " Characteristic Name
+SELECT-OPTIONS:
+  s_chaval FOR ausp-atwrt.                          " Characteristic Values
+SELECTION-SCREEN END OF BLOCK b2.
+
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-003.
+PARAMETERS:
+  p_matfilt TYPE makt-maktx.                        " Material Description Filter
+SELECTION-SCREEN END OF BLOCK b3.
+
+SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE text-004.
+SELECT-OPTIONS:
+  s_mp FOR mpla-warpl.                              " Maintenance Plan
+SELECTION-SCREEN END OF BLOCK b4.
+
+SELECTION-SCREEN BEGIN OF BLOCK b5 WITH FRAME TITLE text-005.
+SELECT-OPTIONS:
+  s_flstat FOR tj02t-istat DEFAULT 'I0076' TO 'E0006'. " Status Range Default
+SELECTION-SCREEN END OF BLOCK b5.
+
+SELECTION-SCREEN BEGIN OF BLOCK b6 WITH FRAME TITLE text-006.
+PARAMETERS:
+  p_test RADIOBUTTON GROUP rad1 DEFAULT 'X' USER-COMMAND rad, " Test Mode
+  p_eff  RADIOBUTTON GROUP rad1.                              " Effective Mode
+SELECTION-SCREEN END OF BLOCK b6.
 
 *---------------------------------------------------------------------*
-* AT SELECTION-SCREEN
+* AT SELECTION-SCREEN VALIDATION
 *---------------------------------------------------------------------*
 AT SELECTION-SCREEN.
-  PERFORM validate_data.
-
-  IF go_controller IS BOUND.
-    go_controller->copy_option_to_parameter( CHANGING cs_parameter = gs_parameter ).
-    go_controller->on_selection_screen( CHANGING cs_parameter = gs_parameter ).
-    go_controller->copy_parameter_to_option( EXPORTING is_parameter = gs_parameter ).
+  " Validation: Ensure characteristic value(s) selected
+  IF s_chaval[] IS INITIAL.
+    MESSAGE 'Select at least one characteristic value.' TYPE 'E'.
   ENDIF.
+
+  " Validation: Ensure at least one selection criteria is provided
+  IF p_plant IS INITIAL AND p_floc IS INITIAL AND p_class IS INITIAL
+     AND p_char IS INITIAL AND p_matfilt IS INITIAL AND s_mp[] IS INITIAL.
+    MESSAGE 'Enter selection criteria.' TYPE 'E'.
+  ENDIF.
+
+*---------------------------------------------------------------------*
+* START-OF-SELECTION
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+
+  WRITE: / '-----------------------------------------------',
+         / 'Selection Summary',
+         / '-----------------------------------------------'.
+
+  WRITE: / 'Maintenance Plant: ', p_plant,
+         / 'Functional Location: ', p_floc,
+         / 'Class: ', p_class,
+         / 'Characteristic: ', p_char.
+
+  LOOP AT s_chaval.
+    WRITE: / 'Characteristic Value: ', s_chaval-low.
+  ENDLOOP.
+
+  IF p_matfilt IS NOT INITIAL.
+    WRITE: / 'Material Filter: ', p_matfilt.
+  ENDIF.
+
+  LOOP AT s_mp.
+    WRITE: / 'Maintenance Plan: ', s_mp-low.
+  ENDLOOP.
+
+  LOOP AT s_flstat.
+    WRITE: / 'Status: ', s_flstat-low.
+  ENDLOOP.
+
+  IF p_test = 'X'.
+    WRITE: / 'Mode: TEST (No update will be done)'.
+  ELSEIF p_eff = 'X'.
+    WRITE: / 'Mode: EFFECTIVE (Actual updates will be performed)'.
+  ENDIF.
+
+  WRITE: / '-----------------------------------------------'.
+  WRITE: / 'Program ready for next development phase (data fetch and update logic).'.
+
+*---------------------------------------------------------------------*
+* END OF PROGRAM
+*---------------------------------------------------------------------*
