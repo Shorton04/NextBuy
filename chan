@@ -1,162 +1,54 @@
-*&———————————————————————*
-*& Report Z_PERIODIC_MAINTENANCE
-*&———————————————————————*
-*& Selection screen for periodic maintenance tasks
-*&———————————————————————*
-REPORT z_periodic_maintenance.
+*---------------------------------------------------------------------*
+* Report: ZCHECKLIST_MAINT_TASKS
+* Description: Checklist for periodic maintenance tasks
+*---------------------------------------------------------------------*
+REPORT zchecklist_maint_tasks.
 
-*–––––––––––––––––––––––––––––––––––*
-
-- TYPE-POOLS
-  *–––––––––––––––––––––––––––––––––––*
-  TYPE-POOLS: slis.
-
-*–––––––––––––––––––––––––––––––––––*
-
-- TABLES
-  *–––––––––––––––––––––––––––––––––––*
-  TABLES: iflot,  “Functional Location
-  t370k.  “Maintenance Planning Plant
-
-*–––––––––––––––––––––––––––––––––––*
-
-- SELECTION SCREEN
-  *–––––––––––––––––––––––––––––––––––*
-- Selection for Functional Location
-  SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
-  PARAMETERS: p_iwerk TYPE iwerk OBLIGATORY.  “Maintenance Plant
-  SELECT-OPTIONS: s_tplnr FOR iflot-tplnr,    “Functional Location
-  s_class FOR iflot-class.     “Class
+*---------------------------------------------------------------------*
+* Selection Screen
+*---------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS: p_plant TYPE werks_d OBLIGATORY,
+            p_floc  TYPE iflot  DEFAULT '714-103',
+            p_class TYPE klah-class.
 
 SELECTION-SCREEN END OF BLOCK b1.
 
-- Selection for Class characteristic value
-  SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
-  PARAMETERS: p_atinn TYPE atinn.             “Characteristic
-  SELECT-OPTIONS: s_atwrt FOR cabn-atbez.     “Characteristic Value
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
+PARAMETERS: p_char TYPE cabn-atnam DEFAULT 'ELASTOMER_TYPE'.
+
+SELECT-OPTIONS: s_charval FOR cabn-atwrt.
 
 SELECTION-SCREEN END OF BLOCK b2.
 
-- Filter on Material text
-  SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
-  PARAMETERS: p_maktx TYPE maktx.             “Material Text Filter
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-003.
+PARAMETERS: p_matfilt TYPE makt-maktx.
 
 SELECTION-SCREEN END OF BLOCK b3.
 
-- Maintenance plan selection
-  SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE TEXT-004.
-  SELECT-OPTIONS: s_warpl FOR impt-warpl.     “Maintenance Plan
+SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE text-004.
+SELECT-OPTIONS: s_mp FOR mplko-mpla.
 
 SELECTION-SCREEN END OF BLOCK b4.
 
-- Admin. Data/Status Info
-  SELECTION-SCREEN BEGIN OF BLOCK b5 WITH FRAME TITLE TEXT-005.
-  SELECT-OPTIONS: s_iphas FOR iflot-iphas.    “FL status excluded
+SELECTION-SCREEN BEGIN OF BLOCK b5 WITH FRAME TITLE text-005.
+SELECT-OPTIONS: s_flstat FOR tj02t-istat.
 
 SELECTION-SCREEN END OF BLOCK b5.
 
-- Execution mode
-  SELECTION-SCREEN BEGIN OF BLOCK b6 WITH FRAME TITLE TEXT-006.
-  PARAMETERS: p_test RADIOBUTTON GROUP grp1 DEFAULT ‘X’,  “Test mode
-  p_effec RADIOBUTTON GROUP grp1.              “Effective mode
+SELECTION-SCREEN BEGIN OF BLOCK b6 WITH FRAME TITLE text-006.
+PARAMETERS: p_test  RADIOBUTTON GROUP rad1 DEFAULT 'X' USER-COMMAND rad,
+            p_eff   RADIOBUTTON GROUP rad1.
 
 SELECTION-SCREEN END OF BLOCK b6.
 
-*–––––––––––––––––––––––––––––––––––*
-
-- TEXT SYMBOLS
-  *–––––––––––––––––––––––––––––––––––*
-- TEXT-001: Selection Func.Locatio
-- TEXT-002: Selection for Class characteristic value
-- TEXT-003: Filter on Material text
-- TEXT-004: Maint. plan selection
-- TEXT-005: Admin. Data/Status Info
-- TEXT-006: Execution Mode
-
-*–––––––––––––––––––––––––––––––––––*
-
-- GLOBAL DATA DECLARATIONS
-  *–––––––––––––––––––––––––––––––––––*
-  DATA: gt_iflot TYPE TABLE OF iflot,         “Functional Locations
-  gs_iflot TYPE iflot,
-  gv_count TYPE i.                       “Record counter
-
-*–––––––––––––––––––––––––––––––––––*
-
-- INITIALIZATION
-  *–––––––––––––––––––––––––––––––––––*
-  INITIALIZATION.
-  “ Set default values if needed
-
-*–––––––––––––––––––––––––––––––––––*
-
-- AT SELECTION-SCREEN
-  *–––––––––––––––––––––––––––––––––––*
-  AT SELECTION-SCREEN.
-  “ Validate selection screen inputs
-
-*–––––––––––––––––––––––––––––––––––*
-
-- START-OF-SELECTION
-  *–––––––––––––––––––––––––––––––––––*
-  START-OF-SELECTION.
-  
-  PERFORM get_data.
-  PERFORM process_data.
-  PERFORM display_results.
-
-*–––––––––––––––––––––––––––––––––––*
-
-- END-OF-SELECTION
-  *–––––––––––––––––––––––––––––––––––*
-  END-OF-SELECTION.
-
-*&———————————————————————*
-*&      Form  GET_DATA
-*&———————————————————————*
-FORM get_data.
-
-SELECT *
-FROM iflot
-INTO TABLE gt_iflot
-WHERE tplnr IN s_tplnr
-AND iwerk = p_iwerk
-AND class IN s_class
-AND iphas IN s_iphas.
-
-IF sy-subrc = 0.
-WRITE: / ‘Data retrieved successfully:’, sy-dbcnt, ‘records’.
-ELSE.
-WRITE: / ‘No data found for selection criteria’.
-ENDIF.
-
-ENDFORM.
-
-*&———————————————————————*
-*&      Form  PROCESS_DATA
-*&———————————————————————*
-FORM process_data.
-
-IF p_test = ‘X’.
-WRITE: / ‘Running in TEST mode - no updates will be performed’.
-ELSE.
-WRITE: / ‘Running in EFFECTIVE mode - data will be updated’.
-ENDIF.
-
-“ Add your processing logic here
-
-ENDFORM.
-
-*&———————————————————————*
-*&      Form  DISPLAY_RESULTS
-*&———————————————————————*
-FORM display_results.
-
-“ Display functional locations
-LOOP AT gt_iflot INTO gs_iflot.
-WRITE: / gs_iflot-tplnr,
-gs_iflot-pltxt,
-gs_iflot-iwerk.
-ENDLOOP.
-
-ENDFORM.
+*---------------------------------------------------------------------*
+* Text Elements
+*---------------------------------------------------------------------*
+* text-001 = 'Selection Func.Location'
+* text-002 = 'Selection for Class characteristic value'
+* text-003 = 'Filter on Material text'
+* text-004 = 'Maint. plan selection'
+* text-005 = 'Admin. Data/Status Info'
+* text-006 = 'Mode Selection'
+*---------------------------------------------------------------------*
