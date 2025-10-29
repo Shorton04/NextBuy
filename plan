@@ -1,7 +1,6 @@
 *---------------------------------------------------------------------*
 * Report: ZPM_ELASTOMER_UPDATE
 * Title : Checklist for Periodic Maintenance Tasks
-* Desc. : Update task list components based on characteristic & BOM
 *---------------------------------------------------------------------*
 REPORT zpm_elastomer_update.
 
@@ -28,24 +27,23 @@ SELECTION-SCREEN END OF BLOCK b1.
 
 SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
 PARAMETERS:
-  p_char TYPE cabn-atnam DEFAULT 'ELASTOMER_TYPE'.  " Characteristic Name
-SELECT-OPTIONS:
-  s_chaval FOR ausp-atwrt.                          " Characteristic Values
+  p_char   TYPE cabn-atnam DEFAULT 'ELASTOMER_TYPE', " Characteristic Name
+  p_chaval TYPE c LENGTH 40.                         " Characteristic Value
 SELECTION-SCREEN END OF BLOCK b2.
 
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-003.
 PARAMETERS:
-  p_matfilt TYPE makt-maktx.                        " Material Description Filter
+  p_matfilt TYPE makt-maktx.                         " Material Description Filter
 SELECTION-SCREEN END OF BLOCK b3.
 
 SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE text-004.
-SELECT-OPTIONS:
-  s_mp FOR mpla-warpl.                              " Maintenance Plan
+PARAMETERS:
+  p_mp TYPE c LENGTH 12.                             " Maintenance Plan
 SELECTION-SCREEN END OF BLOCK b4.
 
 SELECTION-SCREEN BEGIN OF BLOCK b5 WITH FRAME TITLE text-005.
-SELECT-OPTIONS:
-  s_flstat FOR tj02t-istat DEFAULT 'I0076' TO 'E0006'. " Status Range Default
+PARAMETERS:
+  p_flstat TYPE c LENGTH 10 DEFAULT 'DLFL'.          " Functional Location Status
 SELECTION-SCREEN END OF BLOCK b5.
 
 SELECTION-SCREEN BEGIN OF BLOCK b6 WITH FRAME TITLE text-006.
@@ -58,15 +56,10 @@ SELECTION-SCREEN END OF BLOCK b6.
 * AT SELECTION-SCREEN VALIDATION
 *---------------------------------------------------------------------*
 AT SELECTION-SCREEN.
-  " Validation: Ensure characteristic value(s) selected
-  IF s_chaval[] IS INITIAL.
-    MESSAGE 'Select at least one characteristic value.' TYPE 'E'.
-  ENDIF.
 
-  " Validation: Ensure at least one selection criteria is provided
-  IF p_plant IS INITIAL AND p_floc IS INITIAL AND p_class IS INITIAL
-     AND p_char IS INITIAL AND p_matfilt IS INITIAL AND s_mp[] IS INITIAL.
-    MESSAGE 'Enter selection criteria.' TYPE 'E'.
+  " Ensure characteristic value entered
+  IF p_chaval IS INITIAL.
+    MESSAGE 'Please enter at least one characteristic value.' TYPE 'E'.
   ENDIF.
 
 *---------------------------------------------------------------------*
@@ -81,23 +74,20 @@ START-OF-SELECTION.
   WRITE: / 'Maintenance Plant: ', p_plant,
          / 'Functional Location: ', p_floc,
          / 'Class: ', p_class,
-         / 'Characteristic: ', p_char.
-
-  LOOP AT s_chaval.
-    WRITE: / 'Characteristic Value: ', s_chaval-low.
-  ENDLOOP.
+         / 'Characteristic: ', p_char,
+         / 'Characteristic Value: ', p_chaval.
 
   IF p_matfilt IS NOT INITIAL.
     WRITE: / 'Material Filter: ', p_matfilt.
   ENDIF.
 
-  LOOP AT s_mp.
-    WRITE: / 'Maintenance Plan: ', s_mp-low.
-  ENDLOOP.
+  IF p_mp IS NOT INITIAL.
+    WRITE: / 'Maintenance Plan: ', p_mp.
+  ENDIF.
 
-  LOOP AT s_flstat.
-    WRITE: / 'Status: ', s_flstat-low.
-  ENDLOOP.
+  IF p_flstat IS NOT INITIAL.
+    WRITE: / 'Functional Location Status: ', p_flstat.
+  ENDIF.
 
   IF p_test = 'X'.
     WRITE: / 'Mode: TEST (No update will be done)'.
