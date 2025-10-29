@@ -1,0 +1,3420 @@
+*&---------------------------------------------------------------------*
+*& Report ZTR_A2R_ELASTOMER_CHANGE
+* ====================================================================
+* RICEFW ID.........: 8927
+* TR Number.........: D30K904269
+* Version...........: 1.0
+* Program...........: ZTR_A2R_ELASTOMER_CHANGE
+* Transaction Code..: ZA2R_PDF_GENERATOR
+* Author............: EV92123
+* Date..............: 16.10.2025 - 07.11.2025
+* -------------------------------------------------------------------
+* Description.......: Result Print out for Maintenance Order
+* -------------------------------------------------------------------
+* Modification list.:
+* Date      Author    TR Number          Description
+* 10/16/25  EV92123   D30K904269         Initialized program
+* ====================================================================
+REPORT ZTR_A2R_ELASTOMER_CHANGE NO STANDARD PAGE HEADING
+                LINE-COUNT 59
+                LINE-SIZE 132
+*                MESSAGE-ID zi
+                .
+
+
+
+*
+*TYPE-POOLS:
+*  ilox.
+**--------------------------------------------------------------------*
+**   Tabellen                                                         *
+**--------------------------------------------------------------------*
+*TABLES:
+*  equi,     " Equipment Stammdaten
+*  eqst,     " Verbindung Equipment - Stückliste
+*  eqkt,     " Equipmentkurztexte
+*  iflo,     " Technischer Platz (View)
+*  ifloh,    " Technischer Platz (View) mit Hierarchieebene, TPLNR aus IL
+*  iflos,    " Kennzeichnungen Technischer Plätze
+*  iflot,    " Technischer Platz (Tabelle)
+*  iflotx,   " Kurztext zum Techn. Platz
+*  itcpo,    " SAPscript Ausgabe Schnittstelle
+*  jest,     " Einzelstatus pro Objekt
+*  mara,     " Allgemeine Materialdaten
+*  makt,     " Materialkurztexte
+*  mast,     " Verbindung Material - Stueckliste
+*  mpla,     " Maintenance Plan
+*  plko,     " Plan - Kopf
+*  plpo,     " Plan - Vorgang
+*  rspotype, " Zusammenfassung der Spoolerdatentypen
+*  stas,     " Stücklisten - Auswahl von Positionen
+*  stpo,     " Stücklistenposition
+*  t024i,    " Instandhaltungsplanergruppen
+*  tsp01,    " Spool Requests
+*  v_equi,   " Tech.Objekte PM (EQUI, Tech.Platz) (VIEW)
+*  vimpla,   " Wartungspläne - Wartungspositionen
+**  zvvcbpm02," Zuordnung Technischer Platz - Stücklistenwerk
+*  klah,
+*  cawnt.
+**  zvgtsupload.
+**
+***§A1.Extend your output table by a checkbox field.
+***     If you do not want to lock sole checkboxes against input
+***     you do not need field 'celltab'.
+**TYPES: BEGIN OF gs_outtab.
+**TYPES: checkbox TYPE c.                "field for checkbox
+*** §B1.Extend your output table by a field to dis- or enable
+***     cells for input.
+**TYPES: celltab TYPE lvc_t_styl.        "field to switch editability
+**        INCLUDE STRUCTURE zmvi0059_1.
+**TYPES: END OF gs_outtab.
+**
+**TYPES:
+**  BEGIN OF tv_kssk,
+**    objek TYPE objnum,
+**  END   OF tv_kssk.
+**
+**TYPES:
+**  BEGIN OF tv_inob,
+**    objek TYPE cuobn,
+**  END   OF tv_inob.
+*
+**TYPES: BEGIN OF ty_char,
+**         list_nolist TYPE zvgtsupload-list_nolist,
+**       END OF ty_char.
+**--------------------------------------------------------------------*
+**   SELECT-OPTIONS / PARAMETERS                                      *
+**--------------------------------------------------------------------*
+**        Auswahl- Benutzereingabe                                    *
+**--------------------------------------------------------------------*
+*SELECTION-SCREEN BEGIN OF BLOCK scr1 WITH FRAME  TITLE text-se1.
+*SELECT-OPTIONS:
+*  s_swerk        FOR iflo-swerk OBLIGATORY
+*                                NO INTERVALS
+*                                NO-EXTENSION,
+*  s_tplnr        FOR iflos-strno MATCHCODE OBJECT iflm
+*                                 OBLIGATORY
+*                                 NO INTERVALS
+*                                 NO-EXTENSION,
+*  s_class        FOR klah-class NO INTERVALS
+*                                NO-EXTENSION DEFAULT 'TEEXC'.
+*
+**PARAMETERS: p_value TYPE zvgtsupload-list_nolist MODIF ID chr.
+*
+*SELECTION-SCREEN END OF BLOCK scr1.
+*
+*SELECTION-SCREEN BEGIN OF BLOCK se21 WITH FRAME TITLE text-s02.
+**........ -ohne Angabe..................................................
+*SELECTION-SCREEN BEGIN OF LINE.
+*SELECTION-SCREEN COMMENT (31) text-p20.
+*PARAMETERS:      p_obtya AS CHECKBOX DEFAULT ' '.
+*SELECTION-SCREEN END OF LINE.
+**........A-A-Objekt (KIS)...............................................
+*SELECTION-SCREEN BEGIN OF LINE.
+*SELECTION-SCREEN COMMENT (31) text-p2a.
+*PARAMETERS:      p_obtyb AS CHECKBOX DEFAULT ' '.
+*SELECTION-SCREEN END OF LINE.
+**........B-B-Objekt.................
+*SELECTION-SCREEN BEGIN OF LINE.
+*SELECTION-SCREEN COMMENT (31) text-p2c.
+*PARAMETERS:      p_obtyc AS CHECKBOX DEFAULT ' '.
+*SELECTION-SCREEN END OF LINE.
+*
+*SELECTION-SCREEN BEGIN OF LINE.
+*SELECTION-SCREEN COMMENT (31) text-p2x.
+*PARAMETERS:      p_obtyx AS CHECKBOX DEFAULT ' '.
+*SELECTION-SCREEN END OF LINE.
+*
+*SELECTION-SCREEN END OF BLOCK se21.
+*
+*PARAMETERS:
+*  alv_def LIKE disvariant-variant DEFAULT 'STANDARD' NO-DISPLAY.
+*
+*SELECTION-SCREEN BEGIN OF BLOCK scr2 WITH FRAME TITLE text-se2.
+*PARAMETERS:
+*  p_datei(50)    TYPE c DEFAULT 'P:\zmvi0059.pdf'.
+*SELECTION-SCREEN END OF BLOCK scr2.
+*
+*SELECTION-SCREEN BEGIN OF BLOCK scr3 WITH FRAME TITLE text-se4.
+*PARAMETERS: p_mtext TYPE zmvi0059_1-maktx." AS CHECKBOX DEFAULT ' '.
+*SELECTION-SCREEN END OF BLOCK scr3.
+*
+*SELECTION-SCREEN BEGIN OF BLOCK sel3 WITH FRAME TITLE text-se3.
+*PARAMETERS:
+*  p_exp RADIOBUTTON GROUP pgex DEFAULT 'X',
+*  p_nex RADIOBUTTON GROUP pgex.
+*SELECTION-SCREEN END OF BLOCK sel3.
+
+***INCLUDE zmvi0059_scr.
+***
+****--------------------------------------------------------------------*
+****   RANGES                                                           *
+****--------------------------------------------------------------------*
+****        Auswahl für Select in .......                               *
+****--------------------------------------------------------------------*
+***DATA zz_zzint        TYPE i.
+***RANGES seltab        FOR zz_zzint.
+***RANGES r_tplnr       FOR iflos-strno.
+***RANGES r_rqfin       FOR tsp01-rqfinal.
+***RANGES r_cretime     FOR tsp01-rqcretime.
+***
+****--------------------------------------------------------------------*
+****   CONSTANTS                                                        *
+****--------------------------------------------------------------------*
+****        Konstanten                                                  *
+****--------------------------------------------------------------------*
+***CONSTANTS:
+***  c_svtit     LIKE cabn-atnam VALUE 'ELASTOMERART',
+***  c_datub     LIKE sy-datum  VALUE '99991231',
+***  c_datuv     LIKE sy-datum  VALUE '19000101',
+***  c_inak      LIKE jest-stat VALUE 'I0320',
+***  c_lovm      LIKE jest-stat VALUE 'I0076',
+***  c_zeipg(02) TYPE n         VALUE '42',
+***  c_ulins(25) VALUE '_________________________',
+***c_ulinm(71) VALUE '__________/____________________/__________/___________________/_______'.
+***
+***CONSTANTS co_klart        TYPE klassenart VALUE '003'.
+***CONSTANTS co_class        TYPE klasse_d   VALUE 'TUNIT'.
+***CONSTANTS co_mafid        TYPE klmaf      VALUE 'O'.
+***CONSTANTS co_tabnm_iflot  TYPE tabname    VALUE 'IFLOT'.
+***
+****--------------------------------------------------------------------*
+****   DATA                                                             *
+****--------------------------------------------------------------------*
+****        Reportinterne Felder, Feldleisten und Tabellen              *
+****--------------------------------------------------------------------*
+***DATA zz_ulinl(125) TYPE c VALUE '___________________________' &
+***          '_________________________________________________' &
+***          '_________________________________________________'.
+***DATA ok_code           LIKE sy-ucomm.
+***DATA save_ok           LIKE sy-ucomm.
+***DATA g_container       TYPE scrfname VALUE 'BCALV_GRID_DEMO_0100_CONT1'.
+***DATA g_grid            TYPE REF TO cl_gui_alv_grid.
+***DATA g_custom_container TYPE REF TO cl_gui_custom_container.
+***DATA gt_fieldcat       TYPE lvc_t_fcat.
+***DATA gs_layout         TYPE lvc_s_layo.
+***DATA gt_outtab         TYPE gs_outtab OCCURS 0 WITH HEADER LINE.
+***DATA h_swerk           LIKE iflo-swerk.
+***DATA ls_outtab         TYPE gs_outtab.
+***DATA ls_celltab        TYPE lvc_s_styl.
+***DATA lt_filtered       TYPE lvc_t_fidx.
+***DATA mt_filter_index   TYPE lvc_t_fidx OCCURS 0.
+***DATA l_valid           TYPE c.
+***DATA l_locked          TYPE c.
+***
+***DATA wa_atinn          LIKE cabn-atinn.
+***DATA wa_atzhl          LIKE cawnt-atzhl.
+***DATA gv_tplnr          LIKE iflot-tplnr.
+***DATA gv_subrc          TYPE sy-subrc.
+***DATA gv_objty(01)       TYPE c.
+***DATA: BEGIN OF ttpklass OCCURS 0.      "Klassen
+***        INCLUDE STRUCTURE sclass.
+***DATA: END   OF ttpklass.
+***DATA: BEGIN OF ttpkldat OCCURS 0.      "ausp1ägungsdaten
+***        INCLUDE STRUCTURE clobjdat.
+***DATA: END   OF ttpkldat.
+***DATA: BEGIN OF ttpchar OCCURS 0.       "Merkmale
+***        INCLUDE STRUCTURE sel_char.
+***DATA: END   OF ttpchar.
+***DATA z_objnr           LIKE kssk-objek.
+***
+***DATA ls_kssk           TYPE tv_kssk.
+***DATA tt_kssk           TYPE TABLE OF tv_kssk.
+***DATA ls_inob           TYPE tv_inob.
+***DATA tt_inob           TYPE TABLE OF tv_inob.
+***
+***DATA new_tplma(30)     TYPE c.
+***DATA old_equnr         LIKE v_equi-equnr.
+***DATA old_strno         LIKE iflos-strno.
+***DATA sel_strno         LIKE iflos-strno.
+***DATA wa_equnr          LIKE zmvi0059_1-equnr.
+***DATA wa_zzintnr        LIKE zmvi0059_1-zzintnr.
+***DATA wa_ktx01          LIKE zmvi0059_1-ktx01.
+***DATA wa_tdformat       LIKE tline-tdformat.
+***DATA wa_matnr          LIKE zmvi0059_1-matnr.
+***DATA wa_stlst(03)      TYPE n.
+***DATA wa_strno          LIKE zmvi0059_1-zztecho.
+***DATA wa_zzeqktx        LIKE zmvi0059_1-zzeqktx.
+***DATA zzlin             TYPE i.
+***DATA zz_tabix          TYPE i.
+***DATA zzm1              TYPE i.
+***DATA zz_anlag(04)      TYPE c.
+***DATA zz_anzhl          TYPE i.
+***DATA zz_anzln          TYPE i.
+***DATA zz_anzeq          TYPE i.
+***DATA zz_anzpg          LIKE sy-pagno.
+***DATA zz_element(30)    TYPE c.
+***DATA zz_window(30)     TYPE c.
+***DATA zz_formular(16)   TYPE c VALUE 'ZPM_WECHSEL_LIST'.
+***DATA zz_ldate(11)      TYPE c.
+***DATA zz_matnr          LIKE mara-matnr.
+***DATA zz_objnr          LIKE kssk-objek.
+***DATA zz_object(70)     TYPE c.
+***DATA zz_open           TYPE i.
+***DATA zz_retcd          LIKE sy-subrc.
+***DATA zz_statu          TYPE i.
+***DATA zz_stlan          LIKE mast-stlan.
+***DATA zz_stlnr          LIKE stpo-stlnr.
+***DATA zz_stlst          LIKE wa_stlst.
+***DATA zz_stpoxi         LIKE sy-index.
+***DATA zz_strno          LIKE iflos-strno.
+***DATA zz_stufe          LIKE sy-index.
+***DATA zz_title(50)      TYPE c.
+***DATA zz_txt_rekap(40).
+***DATA zz_tplnr          LIKE iflo-tplnr.
+***DATA zz_werks          LIKE iflo-swerk.
+***DATA zz_tit_warpl      LIKE vimpla-warpl.
+***DATA zz_tit_wptxt      LIKE vimpla-wptxt.
+***DATA zz_tit_plnnr      LIKE vimpla-plnnr.
+***DATA zz_tit_plnal      LIKE vimpla-plnal.
+***DATA sw_ausw           TYPE i.
+***DATA xnum              TYPE num2.
+***DATA xname             TYPE char12.
+***DATA xname2            TYPE char12.
+***DATA zz_text_lines     TYPE tline OCCURS 0 WITH HEADER LINE.
+***DATA ta_text_lines     TYPE tline OCCURS 0 WITH HEADER LINE.
+***DATA rspar             LIKE rsparams OCCURS 10 WITH HEADER LINE.
+***DATA tanew_lines       TYPE tline OCCURS 0 WITH HEADER LINE.
+***DATA ta_itcpp          TYPE itcpp OCCURS 0 WITH HEADER LINE.
+***DATA lv_clint          TYPE clint.
+***DATA lv_iflot_tabix    TYPE sy-tabix.
+***
+***DATA: BEGIN OF ta_text_stream OCCURS 0,
+***        tdline LIKE  tline-tdline,
+***      END   OF ta_text_stream.
+***
+***DATA: BEGIN OF zz_ltext,
+***        tdformat LIKE tline-tdformat,
+***        tdline   LIKE tline-tdline,
+***      END   OF zz_ltext.
+***
+***DATA: BEGIN OF sel_object,
+***        plnty LIKE plko-plnty,
+***        plnnr LIKE plko-plnnr,
+***        plnal LIKE plko-plnal,
+***      END   OF sel_object.
+***
+***DATA: BEGIN OF wa_object,
+***        mandt LIKE sy-mandt,
+***        plnty LIKE plpo-plnty,
+***        plnnr LIKE plpo-plnnr,
+***        plnkn LIKE plpo-plnkn,
+***        zaehl LIKE plpo-zaehl,
+***      END   OF wa_object.
+***
+***DATA: BEGIN OF ta_cawnt OCCURS 0,
+***        atzhl     LIKE cawnt-atzhl,
+***        atwtb     LIKE cawnt-atwtb,
+***        objty(01) TYPE c,
+***      END   OF ta_cawnt.
+***
+***DATA: BEGIN OF zzwf,
+***        strno(30) TYPE c,
+***        pltxt     LIKE iflotx-pltxt,
+***        mtnum(08) TYPE c,
+***        maktx     LIKE makt-maktx,
+***        meins     LIKE mara-meins,
+***        menge(13) TYPE c,
+****        eqnum(06) TYPE c,
+***        msgrp     LIKE iloa-msgrp,
+***        eqktx     LIKE eqkt-eqktx,
+***      END   OF zzwf.
+***
+***DATA : lv_tplnr TYPE iloa-tplnr.
+***
+***DATA: BEGIN OF zztx,
+***        tptxt(20)  TYPE c,
+***        strno(20)  TYPE c,
+***        pltxt      LIKE iflotx-pltxt,
+***        wpltx(20)  TYPE c,
+***        warpl(06)  TYPE c,
+***        wptxt      LIKE mpla-wptxt,
+***        txpln(12)  TYPE c,
+***        plnnr(08)  TYPE c,
+***        ltxa1      LIKE plpo-ltxa1,
+***        txnal(20)  TYPE c,
+***        plnal      LIKE plko-plnal,
+***        mtnum(08)  TYPE c,
+***        maktx      LIKE makt-maktx,
+***        meins      LIKE mara-meins,
+***        menge(13)  TYPE c,
+****        eqnum(06)  TYPE c,
+***        msgrp(06)  TYPE c,
+***        bmerk(100) TYPE c,
+***        leram(25)  TYPE c,
+***      END   OF zztx.
+***
+***DATA: BEGIN OF zzsz,
+***        text1(22) TYPE c,
+***        text2(22) TYPE c,
+***        text3(22) TYPE c,
+***      END   OF zzsz.
+***
+****........Tabellen.....................................................
+***DATA:
+***  BEGIN OF ta_v_equi OCCURS 0,
+***    equnr LIKE v_equi-equnr,
+***    matnr LIKE v_equi-matnr,
+***    submt LIKE v_equi-submt,
+***    tplnr LIKE v_equi-tplnr,
+***    objnr LIKE v_equi-objnr,
+***  END   OF ta_v_equi.
+***
+***DATA: BEGIN OF tvimpla OCCURS 0,
+***        warpl LIKE vimpla-warpl,
+***        wptxt LIKE vimpla-wptxt,
+***        tplnr LIKE vimpla-tplnr,
+***        plnnr LIKE vimpla-plnnr,
+***        plnal LIKE vimpla-plnal,
+***        objnr LIKE vimpla-objnr,
+***      END   OF tvimpla.
+****
+***DATA:
+***  BEGIN OF taout OCCURS 0,
+***    anlag LIKE zz_anlag,
+***    strno LIKE iflos-strno,
+***    tplnr LIKE iflo-tplnr,
+***    pltxt LIKE iflotx-pltxt,
+***    kostl LIKE iflo-kostl,
+***    stort LIKE iflo-stort,
+***    ingrp LIKE iflo-ingrp,
+***    swerk LIKE iflo-swerk,
+***    equnr LIKE equi-equnr,
+***    eqktx LIKE v_equi-eqktx,
+***    ausp1 LIKE clobjdat-ausp1,
+***    smbez LIKE clobjdat-ausp1,
+***  END   OF taout.
+***
+***DATA: BEGIN OF ta_iflo OCCURS 0,
+***        tplnr LIKE iflo-tplnr,
+***        tplma LIKE iflo-tplma,
+***        pltxt LIKE iflo-pltxt,
+***        objnr LIKE iflo-objnr,
+***      END   OF ta_iflo.
+***
+***DATA: BEGIN OF ta_iflo_2 OCCURS 0,
+***        tplnr LIKE iflo-tplnr,
+***        tplma LIKE iflo-tplma,
+***        objnr LIKE iflo-objnr,
+***      END   OF ta_iflo_2.
+***
+***DATA: BEGIN OF ta_iflo_3 OCCURS 0,
+***        tplnr LIKE iflo-tplnr,
+***        tplma LIKE iflo-tplma,
+***        objnr LIKE iflo-objnr,
+***      END   OF ta_iflo_3.
+***
+***DATA: BEGIN OF ta_ifloh_tab OCCURS 0.
+***        INCLUDE STRUCTURE ifloh.
+***DATA: END   OF ta_ifloh_tab.
+***
+***DATA: BEGIN OF ta_iflos OCCURS 0,
+***        tplnr LIKE iflos-tplnr,
+***      END   OF ta_iflos.
+***
+***DATA: BEGIN OF ta_root OCCURS 0,
+***        tplnr LIKE iflot-tplnr,
+***      END   OF ta_root.
+***
+***DATA: BEGIN OF ta_sort_objekt OCCURS 0,
+***        tplma(30) TYPE c,
+***        tplnr(30) TYPE c,
+***      END   OF ta_sort_objekt.
+***
+***DATA: BEGIN OF ta_tech_objekt OCCURS 0,
+***        tplma(30) TYPE c,
+***        tplnr(30) TYPE c,
+***        hilev     LIKE ifloh-hilev,
+***        pltxt     LIKE ifloh-pltxt,
+***      END   OF ta_tech_objekt.
+***
+****........Aufbereitung Stücklisten.....................................
+***DATA: BEGIN OF stpox OCCURS 50.
+***        INCLUDE STRUCTURE stpob.
+***DATA: END OF stpox.
+***
+***DATA: BEGIN OF stpob OCCURS 50.
+***        INCLUDE STRUCTURE stpob.
+***DATA: END OF stpob.
+***
+***DATA: BEGIN OF istar OCCURS 50.
+***        INCLUDE STRUCTURE cszalt.
+***DATA: END OF istar.
+***
+***DATA: BEGIN OF stasx OCCURS 5.
+***        INCLUDE STRUCTURE stas.
+***DATA: END OF stasx.
+***
+***DATA:
+***  BEGIN OF ta_sel OCCURS 0,
+***    strno LIKE iflos-strno,
+***    equnr LIKE v_equi-equnr,
+***    matnr LIKE mast-matnr,
+***    stlnr LIKE mast-stlnr,
+***    stlan LIKE mast-stlan,
+***    stufe LIKE zz_stufe,
+***    posnr LIKE stpob-posnr,
+***    idnrk LIKE stpob-idnrk,
+***    stlty LIKE stpob-stlty,
+***    stlkn LIKE stpob-stlkn,
+***    stpoz LIKE stpob-stpoz,
+***    menge LIKE stpob-menge,
+***    meins LIKE stpob-meins,
+***  END OF ta_sel.
+***
+***DATA:
+***  BEGIN OF ta_out OCCURS 0,
+***    strno LIKE iflos-strno,
+***    equnr LIKE v_equi-equnr,
+***    matnr LIKE mast-matnr,
+***    stlnr LIKE mast-stlnr,
+***    stlan LIKE mast-stlan,
+***    stufe LIKE zz_stufe,
+***    posnr LIKE stpob-posnr,
+***    idnrk LIKE stpob-idnrk,
+***    stlty LIKE stpob-stlty,
+***    stlkn LIKE stpob-stlkn,
+***    stpoz LIKE stpob-stpoz,
+***    menge LIKE stpob-menge,
+***    meins LIKE stpob-meins,
+***  END OF ta_out.
+***
+***DATA:
+***  BEGIN OF ta_add OCCURS 0,
+***    strno LIKE iflos-strno,
+***    equnr LIKE v_equi-equnr,
+***    matnr LIKE mast-matnr,
+***    stlnr LIKE mast-stlnr,
+***    stlan LIKE mast-stlan,
+***    stufe LIKE zz_stufe,
+***    posnr LIKE stpob-posnr,
+***    idnrk LIKE stpob-idnrk,
+***    stlty LIKE stpob-stlty,
+***    stlkn LIKE stpob-stlkn,
+***    stpoz LIKE stpob-stpoz,
+***    menge LIKE stpob-menge,
+***    meins LIKE stpob-meins,
+***  END OF ta_add.
+***
+***DATA:
+***  BEGIN OF ta_new OCCURS 0,
+***    strno LIKE iflos-strno,
+***    equnr LIKE v_equi-equnr,
+***    matnr LIKE mast-matnr,
+***    stlnr LIKE mast-stlnr,
+***    stlan LIKE mast-stlan,
+***    stufe LIKE zz_stufe,
+***    posnr LIKE stpob-posnr,
+***    idnrk LIKE stpob-idnrk,
+***    stlty LIKE stpob-stlty,
+***    stlkn LIKE stpob-stlkn,
+***    stpoz LIKE stpob-stpoz,
+***    menge LIKE stpob-menge,
+***    meins LIKE stpob-meins,
+***  END OF ta_new.
+***
+****--------------------------------------------------------------------*
+****        Felder, Feldleisten und Tabellen für den Filetransfer       *
+****--------------------------------------------------------------------*
+***DATA numbytes       TYPE i.
+***DATA pdfspoolid     LIKE tsp01-rqident.
+***DATA jobname        LIKE tbtcjob-jobname.
+***DATA jobcount       LIKE tbtcjob-jobcount.
+***DATA pdf            LIKE tline OCCURS 0 WITH HEADER LINE.
+***DATA ta_tsp01       LIKE tsp01 OCCURS 0 WITH HEADER LINE.
+***
+***DATA: BEGIN OF ta_list OCCURS 0.
+***        INCLUDE STRUCTURE zmvi0059_1.
+***DATA  END OF ta_list.
+***
+***DATA: BEGIN OF ta_rekap OCCURS 0,
+***        matnr LIKE zmvi0059_1-matnr,
+***        maktx LIKE zmvi0059_1-maktx,
+***        meins LIKE zmvi0059_1-meins,
+***        menge LIKE zmvi0059_1-menge,
+***      END   OF ta_rekap.
+***
+***DATA file_name      TYPE string.
+***DATA file_type      TYPE char10 VALUE 'BIN'.
+***
+****--------------------------------------------------------------------*
+****   Feldleisten und Tabellen für den Funktionsbaustein               *
+****        ILOX_IFLOS_READ_BY_STRNO                                    *
+****--------------------------------------------------------------------*
+***DATA  ilox_iflos   LIKE iflos.
+***DATA  ta_et_iflos  LIKE ilox_iflos OCCURS 0.
+***DATA  ilox_t_iflos TYPE ilox_iflos OCCURS 0.
+***DATA  ilox_st_iflos_tplnr TYPE SORTED TABLE OF ilox_iflos
+***                          WITH NON-UNIQUE KEY tplnr alkey.
+***
+***DATA: BEGIN OF ilox_tplnr,
+***        tplnr LIKE iflot-tplnr,
+***      END   OF ilox_tplnr.
+***DATA: ta_et_tplnr  TYPE ilox_tplnr OCCURS 0.
+***
+***DATA: BEGIN OF wa_et_tplnr,
+***        tplnr LIKE iflos-tplnr,
+***      END   OF wa_et_tplnr.
+***
+***DATA: BEGIN OF wa_iflos.
+***        INCLUDE STRUCTURE iflos.
+***DATA: END   OF wa_iflos.
+***
+***DATA: BEGIN OF zz_ilox_r_strno,
+***        sign   LIKE rsparams-sign,
+***        option LIKE rsparams-option,
+***        low    LIKE iflos-strno,
+***        high   LIKE iflos-strno,
+***      END   OF zz_ilox_r_strno.
+***
+***DATA ilox_rt_strno TYPE ilox_r_strno OCCURS 0.
+***
+***DATA: BEGIN OF taalv_zmvi0059_1 OCCURS 0.
+***        INCLUDE STRUCTURE zmvi0059_1.
+***DATA: END OF taalv_zmvi0059_1.
+***
+***DATA: lv_funct_loc TYPE iflos-tplnr.
+***
+***DATA: lt_func_location TYPE RANGE OF iflos-tplnr,  "range table
+***      ls_func_location LIKE LINE OF lt_func_location.
+***
+***DATA: lv_klart TYPE kssk-klart.
+****      lv_clint TYPE kssk-clint.
+***
+****DATA: lt_char_value TYPE STANDARD TABLE OF ty_char,
+****      ls_char_value TYPE ty_char.
+***
+***
+***FIELD-SYMBOLS <f> TYPE any.
+****--------------------------------------------------------------------*
+****   INITIALIZATION                                                   *
+****--------------------------------------------------------------------*
+****        Verarbeitung vor dem Senden des Auswahlbildes               *
+****--------------------------------------------------------------------*
+***INITIALIZATION.
+***  CLEAR   r_tplnr.  REFRESH r_tplnr.
+***  CLEAR   s_swerk.  REFRESH s_swerk.
+***  s_swerk-sign   = 'I'.
+***  s_swerk-option = 'EQ'.
+***  GET PARAMETER ID 'IWK' FIELD s_swerk-low.
+***  APPEND s_swerk.
+***
+****  IF s_class-low NE 'TEEXC'.
+****
+****    LOOP AT SCREEN.
+****      IF screen-name = 'P_VALUE'.
+****        screen-output = '0'.
+****        screen-active = '0'.
+****        screen-invisible = '0'.
+****        MODIFY SCREEN.
+****      ENDIF.
+****    ENDLOOP.
+****
+****  ENDIF.
+***
+***
+****--------------------------------------------------------------------*
+****   AT SELECTION-SCREEN OUTPUT                                             *
+****--------------------------------------------------------------------*
+****AT SELECTION-SCREEN OUTPUT.
+****
+****  IF s_class-low NE 'TEEXC' OR s_class-low EQ ' '.
+****
+****    LOOP AT SCREEN.
+****      IF screen-group1 EQ 'CHR'.
+****        screen-invisible = '1'.
+****        MODIFY SCREEN.
+****      ENDIF.
+****    ENDLOOP.
+****
+****  ENDIF.
+***
+****AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_value.
+****
+****  PERFORM get_f4_help CHANGING p_value.
+***
+****--------------------------------------------------------------------*
+****   AT SELECTION-SCREEN                                              *
+****--------------------------------------------------------------------*
+****        Verarbeitung bei Benutzereingabe:                           *
+****                     ==> Zeilenauswahl                              *
+****--------------------------------------------------------------------*
+****T SELECTION-SCREEN on s_tplnr.
+***AT SELECTION-SCREEN.
+***  CLEAR zz_tit_warpl.
+***  CLEAR zz_tit_wptxt.
+***  CLEAR zz_tit_plnnr.
+***  CLEAR zz_tit_plnal.
+***  CLEAR sw_ausw.
+***
+***  IF p_obtya IS INITIAL AND
+***     p_obtyb IS INITIAL AND
+***     p_obtyc IS INITIAL AND
+***     p_obtyx IS INITIAL.
+***    IF s_class-low EQ 'TEEXC'.
+***      MESSAGE e015 WITH text-g16.
+***    ENDIF.
+***  ENDIF.
+***
+***  IF r_tplnr-low NE s_tplnr-low.
+***    PERFORM clear_screen.
+***    PERFORM select_vimpla.
+***    PERFORM build_screen.
+***    MOVE iflos-strno TO r_tplnr-low.
+***  ENDIF.
+***
+****T SELECTION-SCREEN.
+***  DESCRIBE TABLE tvimpla LINES zzlin.
+***  IF zzlin = 0.
+****    MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m01.
+***  ENDIF.
+***
+***  CLEAR xnum.
+***  CLEAR sw_ausw.
+***  WHILE xnum < 20.
+***    xnum = xnum + 1.
+***    CONCATENATE 'PAUSW2' xnum INTO xname.
+***    ASSIGN (xname) TO <f>.
+***    IF <f> = 'X'.
+***      IF sw_ausw IS INITIAL.
+***        sw_ausw = 1.
+***      ELSE.
+***        MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m02.
+***        SET CURSOR FIELD <f>.
+***      ENDIF.
+***      CONCATENATE 'PWPL2' xnum INTO xname2.
+***      ASSIGN (xname2) TO <f>.
+***      MOVE <f> TO zz_tit_warpl.
+***      CONCATENATE 'PWMT2' xnum INTO xname2.
+***      ASSIGN (xname2) TO <f>.
+***      MOVE <f> TO zz_tit_wptxt.
+***      CONCATENATE 'PLNR2' xnum INTO xname2.
+***      ASSIGN (xname2) TO <f>.
+***      MOVE <f> TO zz_tit_plnnr.
+***      CONCATENATE 'PLNZ2' xnum INTO xname2.
+***      ASSIGN (xname2) TO <f>.
+***      MOVE <f> TO zz_tit_plnal.
+***    ENDIF.
+***  ENDWHILE.
+***
+***  IF sw_ausw IS INITIAL.
+***    MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m03.
+***    SET CURSOR FIELD pausw201.
+***  ENDIF.
+***
+***  IF zz_tit_plnnr IS INITIAL.
+***    MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m04.
+***  ENDIF.
+***
+***  IF zz_tit_plnal IS INITIAL.
+***    MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m05.
+***  ENDIF.
+****---------------------------------------------------------------------*
+****       MAIN                                                          *
+****---------------------------------------------------------------------*
+***END-OF-SELECTION.
+***
+***  CALL SCREEN 100.
+***
+****---------------------------------------------------------------------*
+****       MODULE PBO OUTPUT                                             *
+****---------------------------------------------------------------------*
+***MODULE pbo OUTPUT.
+***  SET PF-STATUS 'MAIN100'.
+***  SET TITLEBAR 'MAIN100'.
+***  IF g_custom_container IS INITIAL.
+***    PERFORM create_and_init_alv.
+***  ENDIF.
+***ENDMODULE.                    "pbo OUTPUT
+***
+****---------------------------------------------------------------------*
+****       MODULE PAI INPUT                                              *
+****---------------------------------------------------------------------*
+***MODULE pai INPUT.
+***  save_ok = ok_code.
+***  CLEAR ok_code.
+***  CASE save_ok.
+***    WHEN 'BACK'.
+***      PERFORM selection_screen.
+***    WHEN 'EXIT'.
+***      PERFORM exit_program.
+***    WHEN 'SELECT'.
+***      PERFORM select_all_entries CHANGING gt_outtab[].
+***    WHEN 'DESELECT'.
+***      PERFORM deselect_all_entries CHANGING gt_outtab[].
+***    WHEN 'RESET'.
+****     perform reset_selected_entries changing gt_outtab[].
+***      PERFORM deselect_all_entries CHANGING gt_outtab[].
+***    WHEN '&PDF'.
+***      PERFORM generate_pdf CHANGING gt_outtab[].
+***  ENDCASE.
+***ENDMODULE.                    "pai INPUT
+***
+****---------------------------------------------------------------------*
+****       FORM EXIT_PROGRAM                                             *
+****---------------------------------------------------------------------*
+***FORM exit_program.
+***  LEAVE PROGRAM.
+****  LEAVE TO SCREEN 0.
+***ENDFORM.                    "exit_program
+***
+****&-------------------------------------------------------------------*
+****&      Form  BUILD_FIELDCAT                                         *
+****&-------------------------------------------------------------------*
+****       text                                                         *
+****--------------------------------------------------------------------*
+****      <--P_GT_FIELDCAT  text                                        *
+****--------------------------------------------------------------------*
+***FORM build_fieldcat CHANGING pt_fieldcat TYPE lvc_t_fcat.
+***
+***  DATA ls_fcat TYPE lvc_s_fcat.
+***
+***  CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+***    EXPORTING
+***      i_structure_name = 'ZMVI0059_1'
+***    CHANGING
+***      ct_fieldcat      = pt_fieldcat.
+***
+****§A2.Add an entry for the checkbox in the fieldcatalog
+***  CLEAR ls_fcat.
+***  ls_fcat-fieldname = 'CHECKBOX'.
+**** Essential: declare field as checkbox and
+****            mark it as editable field:
+***  ls_fcat-checkbox = 'X'.
+***  ls_fcat-edit = 'X'.
+***
+**** do not forget to provide texts for this extra field
+***  ls_fcat-coltext = text-f01.
+***  ls_fcat-tooltip = text-f01.
+***  ls_fcat-seltext = text-f01.
+***
+**** optional: set column width
+***  ls_fcat-outputlen = 10.
+****
+***  APPEND ls_fcat TO pt_fieldcat.
+***
+***ENDFORM.                    "build_fieldcat
+***
+****&-------------------------------------------------------------------*
+****&      Form  CREATE_AND_INIT_ALV                                    *
+****&-------------------------------------------------------------------*
+****       text                                                         *
+****--------------------------------------------------------------------*
+****      <--P_GT_OUTTAB  text                                          *
+****      <--P_GT_FIELDCAT  text                                        *
+****      <--P_GS_LAYOUT  text                                          *
+****--------------------------------------------------------------------*
+***FORM create_and_init_alv.
+***
+***  DATA: lt_exclude TYPE ui_functions.
+***
+***  CREATE OBJECT g_custom_container
+***    EXPORTING
+***      container_name = g_container.
+***  CREATE OBJECT g_grid
+***    EXPORTING
+***      i_parent = g_custom_container.
+***
+***  PERFORM build_fieldcat CHANGING gt_fieldcat.
+***
+**** Exclude all edit functions in this example since we do not need them:
+***  PERFORM exclude_tb_functions CHANGING lt_exclude.
+***
+***  IF sw_ausw IS INITIAL.
+***    break lsimonet.
+***    MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m01.
+***  ENDIF.
+***
+***  PERFORM build_data.
+***
+****§ B3.Use the layout structure to aquaint additional field to ALV.
+***
+****........ALV-Control: Spaltenbreite optimieren........................
+***  gs_layout-cwidth_opt = 'X'.
+***
+***  gs_layout-stylefname = 'CELLTAB'.
+***
+***  CALL METHOD g_grid->set_table_for_first_display
+***    EXPORTING
+***      is_layout            = gs_layout
+***      it_toolbar_excluding = lt_exclude
+***    CHANGING
+***      it_fieldcatalog      = gt_fieldcat
+***      it_outtab            = gt_outtab[].
+***
+***ENDFORM.                               "CREATE_AND_INIT_ALV
+***
+****&---------------------------------------------------------------------*
+****&      Form  EXCLUDE_TB_FUNCTIONS
+****&---------------------------------------------------------------------*
+****       text
+****----------------------------------------------------------------------*
+****      <--P_LT_EXCLUDE  text
+****----------------------------------------------------------------------*
+***FORM exclude_tb_functions CHANGING pt_exclude TYPE ui_functions.
+***
+***  DATA ls_exclude TYPE ui_func.
+***
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_copy_row.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_delete_row.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_append_row.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_insert_row.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_move_row.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_copy.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_cut.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_paste.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_paste_new_row.
+***  APPEND ls_exclude TO pt_exclude.
+***  ls_exclude = cl_gui_alv_grid=>mc_fc_loc_undo.
+***  APPEND ls_exclude TO pt_exclude.
+***ENDFORM.                               " EXCLUDE_TB_FUNCTIONS
+***
+****&---------------------------------------------------------------------*
+****&      Form  build_data
+****&---------------------------------------------------------------------*
+****       text
+****----------------------------------------------------------------------*
+****  -->  p1        text
+****  <--  p2        text
+****----------------------------------------------------------------------*
+***FORM build_data.
+***
+***  CLEAR   ta_root.
+***  REFRESH ta_root.
+***  CLEAR   ta_ifloh_tab.
+***  REFRESH ta_ifloh_tab.
+***  CLEAR   ta_tech_objekt.
+***  REFRESH ta_tech_objekt.
+***  CLEAR   ta_et_iflos.
+***  REFRESH ta_et_iflos.
+***  CLEAR   ilox_t_iflos.
+***  REFRESH ilox_t_iflos.
+***  CLEAR   ilox_rt_strno.
+***  REFRESH ilox_rt_strno.
+***  CLEAR   ta_et_tplnr.
+***  REFRESH ta_et_tplnr.
+***  CLEAR   ilox_iflos.
+***  CLEAR   ilox_tplnr.
+***  CLEAR   wa_et_tplnr.
+***  CLEAR   zz_ilox_r_strno.
+***
+****........Technische Plätze Struktur auflösen..........................
+***  IF NOT s_tplnr IS INITIAL.
+***
+****    LOOP AT s_tplnr.
+****
+****      CLEAR: lv_funct_loc.
+****      lv_funct_loc = s_tplnr-low.
+****
+****      ls_func_location-sign   = s_tplnr-sign.
+****      ls_func_location-option = s_tplnr-option.
+****
+****      CALL FUNCTION 'CONVERSION_EXIT_TPLNR_INPUT'
+****        EXPORTING
+****          input  = lv_funct_loc
+****        IMPORTING
+****          output = lv_funct_loc.
+****
+****      ls_func_location-low = lv_funct_loc.
+****
+****      CLEAR: lv_funct_loc.
+****      lv_funct_loc = s_tplnr-high.
+****
+****      CALL FUNCTION 'CONVERSION_EXIT_TPLNR_INPUT'
+****        EXPORTING
+****          input  = lv_funct_loc
+****        IMPORTING
+****          output = lv_funct_loc.
+****
+****      ls_func_location-high = lv_funct_loc.
+****
+****      APPEND ls_func_location TO lt_func_location.
+****      CLEAR: ls_func_location.
+****    ENDLOOP.
+****
+****    SELECT * FROM kssk INTO TABLE lt_kssk
+****                     WHERE objek = lt_func_location.
+***
+***    PERFORM fetch_class_floc.
+***    PERFORM f00_techn_platz.
+***    PERFORM f05_techn_platz.
+***  ENDIF.
+***
+*************Class_Charactistic_value_check******
+***
+***  IF s_class-low = 'TEEXC'.
+***
+***    CALL FUNCTION 'CONVERSION_EXIT_ATINN_INPUT'
+***      EXPORTING
+***        input  = c_svtit
+***      IMPORTING
+***        output = wa_atinn.
+***
+***    CLEAR   ta_cawnt.
+***    REFRESH ta_cawnt.
+***    CLEAR   wa_atzhl.
+***
+***    SELECT atzhl atwtb
+***           FROM  cawnt
+***           INTO (cawnt-atzhl, cawnt-atwtb)
+***           WHERE atinn = wa_atinn
+***           AND   atzhl >= wa_atzhl
+***           AND   spras EQ sy-langu.
+***      wa_atzhl = cawnt-atzhl.
+***      CLEAR ta_cawnt.
+***      ta_cawnt-atzhl = cawnt-atzhl.
+***      ta_cawnt-atwtb = cawnt-atwtb.
+***      CASE cawnt-atzhl.
+***        WHEN 0001. ta_cawnt-objty = 'A'.
+***        WHEN 0002. ta_cawnt-objty = 'B'.
+***        WHEN 0003. ta_cawnt-objty = 'C'.
+***        WHEN 0004. ta_cawnt-objty = 'X'.
+***      ENDCASE.
+***      APPEND ta_cawnt.
+***    ENDSELECT.
+***    SORT ta_cawnt BY atzhl.
+***
+***  ENDIF.
+*******************END OF Class_Charactistic_value_check******
+***
+***
+***
+****........List-Datum aufbereiten.......................................
+***  CLEAR zz_ldate.
+***  CALL FUNCTION 'ZZ_CREATE_DATE_WITH_MONTH_NAME'
+***    EXPORTING
+***      i_langu = sy-langu
+***      i_datum = sy-datum
+***    IMPORTING
+***      e_ldate = zz_ldate.
+***
+****........Drucken Tabelle TA_SORT_OBJEKT ausgeben......................
+****........Die Tabelle darf nicht umsortiert werden.....................
+***  LOOP AT ta_sort_objekt.
+***
+*************Class_Charactistic_value_check**********************
+***    IF s_class-low IS NOT INITIAL AND s_class-low = 'TEEXC'.
+***      CLEAR: gv_tplnr.
+***      CALL FUNCTION 'CONVERSION_EXIT_TPLNR_INPUT'
+***        EXPORTING
+***          input                = ta_sort_objekt-tplnr
+***          i_flg_check_internal = 'X'
+***        IMPORTING
+***          output               = gv_tplnr
+***        EXCEPTIONS
+***          not_found            = 1
+***          OTHERS               = 2.
+***
+***      PERFORM select_class_data USING gv_tplnr.
+***
+***      IF p_obtya = 'X' AND
+***           gv_objty = 'A'.
+***      ELSE.
+***        IF p_obtyb = 'X' AND
+***           gv_objty = 'B'.
+***        ELSE.
+***          IF p_obtyc = 'X' AND
+***            gv_objty = 'C'.
+***          ELSE.
+***            IF p_obtyx = 'X' AND
+***              gv_objty = 'X'.
+***            ELSE.
+***              CONTINUE.
+***            ENDIF.
+***          ENDIF.
+***        ENDIF.
+***      ENDIF.
+***    ENDIF.
+*******************END OF Class_Charactistic_value_check*****
+***
+*******Checking if the selected function location
+*******is for the same class give on selection. if not ingore FLoc.
+***
+***    IF s_class-low IS NOT INITIAL AND s_class-low NE 'TEEXC'.
+***      CLEAR:lv_iflot_tabix.
+***      lv_iflot_tabix = sy-tabix.
+***      READ TABLE tt_inob INTO ls_inob WITH KEY
+***                                      objek = ta_sort_objekt-tplnr.
+***      IF sy-subrc <> 0.
+****        DELETE ta_sort_objekt INDEX lv_iflot_tabix.
+***        CONTINUE.
+***      ENDIF.
+***    ENDIF.
+*************** *****************************************************
+***
+***    FORMAT COLOR 4 INTENSIFIED ON.
+***    PERFORM select_iflotx USING ta_sort_objekt-tplnr.
+***    CLEAR taalv_zmvi0059_1.
+***    WRITE: ta_sort_objekt-tplnr TO taalv_zmvi0059_1-zztecho.
+***    WRITE: ta_sort_objekt-tplnr TO wa_strno.
+***    FORMAT RESET.
+***    MOVE   iflotx-pltxt TO taalv_zmvi0059_1-ktx01.
+***    MOVE   iflotx-pltxt TO wa_ktx01.
+***    APPEND taalv_zmvi0059_1.
+***    IF NOT iflos-tplnr IS INITIAL.
+***      CLEAR ta_new. REFRESH ta_new. FREE ta_new.
+***      CLEAR wa_equnr.
+****     perform w10_tp_stueli_werk using iflos-tplnr.         "SiL020507
+***      PERFORM w10_tp_stueli USING iflos-tplnr.
+***      PERFORM w10_v_equi USING iflos-tplnr.
+***      DESCRIBE TABLE ta_new LINES zzlin.
+***      IF NOT zzlin IS INITIAL.
+***        SORT ta_new BY strno
+***                       equnr
+***                       idnrk.
+***        CLEAR old_equnr.
+***        LOOP AT ta_new.
+***          IF old_equnr NE ta_new-equnr.
+***            SELECT SINGLE eqktx
+***                   FROM   eqkt
+***                   INTO   eqkt-eqktx
+***                   WHERE  equnr EQ ta_new-equnr
+***                   AND    spras EQ sy-langu.
+***            IF sy-subrc <> 0.
+***              CLEAR eqkt-eqktx.
+***            ENDIF.
+***          ENDIF.
+***          PERFORM select_makt USING ta_new-idnrk.
+***          CLEAR taalv_zmvi0059_1.
+***          taalv_zmvi0059_1-zztecho = wa_strno.
+***          taalv_zmvi0059_1-ktx01   = wa_ktx01.
+***          taalv_zmvi0059_1-equnr   = ta_new-equnr.
+***          IF taalv_zmvi0059_1-equnr IS NOT INITIAL.
+***            taalv_zmvi0059_1-zzeqktx = eqkt-eqktx.
+***          ENDIF.
+***          taalv_zmvi0059_1-matnr   = ta_new-idnrk.
+***          taalv_zmvi0059_1-maktx   = makt-maktx.
+***          taalv_zmvi0059_1-menge   = ta_new-menge.
+***          taalv_zmvi0059_1-meins   = ta_new-meins.
+***          COLLECT taalv_zmvi0059_1.
+***          old_equnr = ta_new-equnr.
+***        ENDLOOP.
+***      ENDIF.
+***    ENDIF.
+***  ENDLOOP.
+****
+***  PERFORM fill_zzintnr.
+***
+***  LOOP AT taalv_zmvi0059_1.
+***
+***    IF p_mtext IS NOT INITIAL.
+****      IF ( taalv_zmvi0059_1-maktx CS 'Schlauch' OR
+****           taalv_zmvi0059_1-maktx CS 'Membrane' OR
+****           taalv_zmvi0059_1-maktx CS 'Dichtung' OR
+****           taalv_zmvi0059_1-maktx CS 'Andere'  ).
+***
+***      IF taalv_zmvi0059_1-maktx CS p_mtext.
+***
+***        MOVE-CORRESPONDING taalv_zmvi0059_1 TO gt_outtab.
+***        APPEND gt_outtab.
+***      ENDIF.
+***
+***    ELSE.
+***      MOVE-CORRESPONDING taalv_zmvi0059_1 TO gt_outtab.
+***      APPEND gt_outtab.
+***    ENDIF.
+***  ENDLOOP.
+***
+***ENDFORM.                               " build_data
+***
+****&---------------------------------------------------------------------*
+****&      Form  build_screen
+****&---------------------------------------------------------------------*
+****       text
+****----------------------------------------------------------------------*
+****  -->  p1        text
+****  <--  p2        text
+****----------------------------------------------------------------------*
+***FORM build_screen.
+***  DESCRIBE TABLE tvimpla LINES zzlin.
+***
+***  IF zzlin = 0.
+***    PERFORM clear_screen.
+***    EXIT.
+***  ENDIF.
+***
+***  IF zzlin > 0.
+***    CLEAR xnum.
+***
+***    LOOP AT tvimpla.
+***      xnum = xnum + 1.
+***
+***      CONCATENATE 'PAUSW2' xnum INTO xname2.
+***      ASSIGN (xname2) TO <f>.
+***      MOVE ' '        TO <f>.
+***
+***      CONCATENATE 'PWPL2' xnum INTO xname2.
+***      ASSIGN (xname2) TO <f>.
+***      MOVE tvimpla-warpl TO <f>.
+***
+***      CONCATENATE 'PWMT2' xnum INTO xname2.
+***      ASSIGN (xname2) TO <f>.
+***      MOVE tvimpla-wptxt TO <f>.
+***
+***      CONCATENATE 'PLNR2' xnum INTO xname2.
+***      ASSIGN (xname2)    TO <f>.
+***      MOVE tvimpla-plnnr TO <f>.
+***
+***      CONCATENATE 'PLNZ2' xnum INTO xname2.
+***      ASSIGN (xname2)    TO <f>.
+***      MOVE tvimpla-plnal TO <f>.
+***
+***      CONCATENATE 'PWTX2' xnum INTO xname2.
+***      ASSIGN (xname2)    TO <f>.
+***      MOVE tvimpla-plnal TO <f>.
+***
+***    ENDLOOP.
+***  ELSE.                                                     " zzlin = 0
+****    MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m01.
+***  ENDIF.
+***
+***  CLEAR zz_tabix.
+***  LOOP AT SCREEN.
+***    IF screen-name = 'PAUSW201'.
+***      CLEAR zz_tabix.
+***    ENDIF.
+***
+***    CASE screen-name(04).
+***
+***      WHEN 'PAUS'.
+***        zz_tabix = zz_tabix + 1.
+***        IF zz_tabix > zzlin.
+****         screen-invisible = '1'.
+***          screen-input = '0'.
+****         screen-active = '0'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN 'PWPL' OR 'PWMT' OR 'PLNR' OR 'PLNZ' OR 'PWTX'.
+***        IF zz_tabix > zzlin.
+****         screen-invisible = '1'.
+***          screen-input = '0'.
+****         screen-active = '0'.
+****         screen-output = '1'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN '%CWP' OR '%CAB' OR '%CPG'.
+***        IF zz_tabix > zzlin.
+****         screen-invisible = '1'.
+***          screen-input  = '0'.
+****         screen-active = '0'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN OTHERS.
+***    ENDCASE.
+***  ENDLOOP.
+***ENDFORM.                    " build_screen
+***
+****&-------------------------------------------------------------------*
+****&      Form  clear_screen                                           *
+****&-------------------------------------------------------------------*
+****       text                                                         *
+****--------------------------------------------------------------------*
+****  -->  p1        text                                               *
+****  <--  p2        text                                               *
+****--------------------------------------------------------------------*
+***FORM clear_screen.
+***  CLEAR xnum.
+***  CLEAR zz_tabix.
+***  CLEAR zzlin.
+***
+***  LOOP AT SCREEN.
+***    CASE screen-name(04).
+***      WHEN 'PAUS'.
+***        zz_tabix = zz_tabix + 1.
+***        xnum     = xnum + 1.
+***        IF zz_tabix > zzlin.
+***
+***          CONCATENATE 'PAUSW2' xnum INTO xname2.
+***          ASSIGN (xname2) TO <f>.
+***          MOVE ' '        TO <f>.
+***
+****         screen-invisible = '1'.
+***          screen-input  = '1'.
+***          screen-active = '1'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN 'PWPL'.
+***        IF zz_tabix > zzlin.
+***          CONCATENATE 'PWPL2' xnum INTO xname2.
+***          ASSIGN (xname2) TO <f>.
+***          CLEAR  <f>.
+****         screen-invisible = '1'.
+***          screen-active = '1'.
+***          screen-input = '1'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN 'PWMT'.
+***        IF zz_tabix > zzlin.
+***          CONCATENATE 'PWMT2' xnum INTO xname2.
+***          ASSIGN (xname2) TO <f>.
+***          CLEAR  <f>.
+****         screen-invisible = '1'.
+***          screen-active = '1'.
+***          screen-input = '1'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN 'PLNR'.
+***        IF zz_tabix > zzlin.
+***          CONCATENATE 'PLNR2' xnum INTO xname2.
+***          ASSIGN (xname2) TO <f>.
+***          CLEAR  <f>.
+****         screen-invisible = '1'.
+***          screen-active = '1'.
+***          screen-input = '1'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN 'PLNZ'.
+***        IF zz_tabix > zzlin.
+***          CONCATENATE 'PLNZ2' xnum INTO xname2.
+***          ASSIGN (xname2) TO <f>.
+***          CLEAR  <f>.
+****         screen-invisible = '1'.
+***          screen-active = '1'.
+***          screen-input = '1'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN 'PWTX'.
+***        IF zz_tabix > zzlin.
+***          CONCATENATE 'PWTX2' xnum INTO xname2.
+***          ASSIGN (xname2) TO <f>.
+***          CLEAR  <f>.
+****         screen-invisible = '1'.
+***          screen-active = '1'.
+***          screen-input = '1'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***
+***      WHEN '%CWP' OR '%CAB' OR '%CPG'.
+***        IF zz_tabix > zzlin.
+****         screen-invisible = '1'.
+***          screen-input  = '0'.
+***          screen-active = '1'.
+***          MODIFY SCREEN.
+***        ENDIF.
+***      WHEN OTHERS.
+***    ENDCASE.
+***  ENDLOOP.
+***
+***ENDFORM.                    " clear_screen
+***
+****&-------------------------------------------------------------------*
+****&      Form  select_all_entries                                     *
+****&-------------------------------------------------------------------*
+****       text                                                         *
+****--------------------------------------------------------------------*
+****      <--P_GT_OUTTAB  text                                          *
+****--------------------------------------------------------------------*
+***FORM select_all_entries CHANGING pt_outtab TYPE STANDARD TABLE.
+***
+****§A4ad. Before you (a)set, reset or (d)evaluate checkboxes,
+****       you must check the input cells.
+****
+**** If all entries are ok, ALV transferes new values to the output
+**** table which you then can modify.
+***
+**** call method g_grid->check_changed_data
+****             importing
+****                e_valid = l_valid.
+***
+**** if l_valid eq 'X'.
+***
+****   call method g_grid->refresh_table_display.
+***
+**** endif.
+***
+****§A4ad. Before you (a)set, reset or (d)evaluate checkboxes,
+****       you must check the input cells.
+****
+**** If all entries are ok, ALV transferes new values to the output
+**** table which you then can modify.
+***
+***  CALL METHOD g_grid->check_changed_data
+***    IMPORTING
+***      e_valid = l_valid.
+***
+***  IF l_valid EQ 'X'.
+***
+***    CALL METHOD g_grid->get_filtered_entries
+***      IMPORTING
+***        et_filtered_entries = lt_filtered.
+***
+***    LOOP AT pt_outtab INTO ls_outtab.
+***      PERFORM check_lock USING    ls_outtab
+***                         CHANGING l_locked.
+***
+***      IF l_locked IS INITIAL
+***         AND NOT ls_outtab-checkbox EQ '-'.
+***        ls_outtab-checkbox = 'X'.
+***      ENDIF.
+***
+***      IF ls_outtab-checkbox = 'X'.
+***        READ TABLE lt_filtered TRANSPORTING NO FIELDS
+***                   WITH TABLE KEY table_line = sy-tabix.
+***
+***        IF sy-subrc = 0.
+***          CLEAR ls_outtab-checkbox.
+***        ENDIF.
+***
+***      ENDIF.
+***
+***      MODIFY pt_outtab FROM ls_outtab.
+***    ENDLOOP.
+***
+***    CALL METHOD g_grid->refresh_table_display.
+***  ENDIF.
+***ENDFORM.                               " select_all_entries
+***
+****&-------------------------------------------------------------------*
+****&      Form  deselect_all_entries                                   *
+****&-------------------------------------------------------------------*
+****       text                                                         *
+****--------------------------------------------------------------------*
+****      <--P_GT_OUTTAB[]  text                                        *
+****--------------------------------------------------------------------*
+***FORM deselect_all_entries CHANGING pt_outtab TYPE STANDARD TABLE.
+***
+****§A4ad. Before you (a)set, reset or (d)evaluate checkboxes,
+****       you must check the input cells.
+****
+**** If all entries are ok, ALV transferes new values to the output
+**** table which you then can modify.
+***
+***  CALL METHOD g_grid->check_changed_data
+***    IMPORTING
+***      e_valid = l_valid.
+***
+***  IF l_valid EQ 'X'.
+***    LOOP AT pt_outtab INTO ls_outtab.
+***      PERFORM check_lock USING    ls_outtab
+***                       CHANGING l_locked.
+***      IF l_locked IS INITIAL
+***         AND NOT ls_outtab-checkbox EQ '-'.
+***        ls_outtab-checkbox = ' '.
+***      ENDIF.
+***
+***      MODIFY pt_outtab FROM ls_outtab.
+***    ENDLOOP.
+***
+***    CALL METHOD g_grid->refresh_table_display.
+***  ENDIF.
+***ENDFORM.                               " deselect_all_entries
+***
+****&-------------------------------------------------------------------*
+****&      Form  reset_selected_entries                                 *
+****&-------------------------------------------------------------------*
+****       text                                                         *
+****--------------------------------------------------------------------*
+****      <--P_GT_OUTTAB[]  text                                        *
+****--------------------------------------------------------------------*
+***FORM reset_selected_entries CHANGING pt_outtab TYPE STANDARD TABLE.
+***
+****§A4b. Before you set, (b)reset or evaluate checkboxes,
+****      you must check the input cells.
+****
+**** If all entries are ok, ALV transferes new values to the output
+**** table which you then can modify.
+***
+***  CALL METHOD g_grid->check_changed_data
+***    IMPORTING
+***      e_valid = l_valid.
+***
+***  IF l_valid EQ 'X'.
+***    CALL METHOD g_grid->refresh_table_display.
+***  ENDIF.
+***ENDFORM.                               " reset_selected_entries
+***
+****&-------------------------------------------------------------------*
+****&      Form  check_lock                                             *
+****&-------------------------------------------------------------------*
+****       text                                                         *
+****--------------------------------------------------------------------*
+****      -->P_LS_OUTTAB  text                                          *
+****      <--P_L_LOCKED  text                                           *
+****--------------------------------------------------------------------*
+***FORM check_lock USING    ps_outtab TYPE gs_outtab
+***                CHANGING p_locked.
+***
+***  LOOP AT ps_outtab-celltab INTO ls_celltab.
+***    IF ls_celltab-fieldname = 'CHECKBOX'.
+***      IF ls_celltab-style EQ cl_gui_alv_grid=>mc_style_disabled.
+***        p_locked = 'X'.
+***      ELSE.
+***        p_locked = space.
+***      ENDIF.
+***    ENDIF.
+***  ENDLOOP.
+***ENDFORM.                               " check_lock
+***
+****&-------------------------------------------------------------------*
+****&      Form  generate_pdf                                           *
+****&-------------------------------------------------------------------*
+****       text                                                         *
+****--------------------------------------------------------------------*
+****      <--P_GT_OUTTAB[]  text                                        *
+****--------------------------------------------------------------------*
+***FORM generate_pdf CHANGING pt_outtab TYPE STANDARD TABLE.
+***
+****§A4b. Before you set, (b)reset or evaluate checkboxes,
+****      you must check the input cells.
+****
+**** If all entries are ok, ALV transferes new values to the output
+**** table which you then can modify.
+***
+***  CALL METHOD g_grid->check_changed_data
+***    IMPORTING
+***      e_valid = l_valid.
+***
+***  CLEAR ta_list.  REFRESH ta_list.
+***  CLEAR ta_rekap. REFRESH ta_rekap.
+***
+***  LOOP AT pt_outtab INTO gt_outtab.
+***    IF gt_outtab-checkbox = 'X'.
+***      CLEAR ta_list.
+***      MOVE  gt_outtab-zztecho TO ta_list-zztecho.
+***      MOVE  gt_outtab-ktx01   TO ta_list-ktx01.
+***      MOVE  gt_outtab-matnr   TO ta_list-matnr.
+***      MOVE  gt_outtab-maktx   TO ta_list-maktx.
+***      MOVE  gt_outtab-meins   TO ta_list-meins.
+***      MOVE  gt_outtab-menge   TO ta_list-menge.
+***      MOVE  gt_outtab-equnr   TO ta_list-equnr.
+***      IF ta_list-equnr IS NOT INITIAL.
+***        MOVE  gt_outtab-zzeqktx TO ta_list-zzeqktx.
+***      ENDIF.
+***      APPEND ta_list.
+***
+***      IF NOT gt_outtab-matnr IS INITIAL.
+***        CLEAR ta_rekap.
+***        MOVE  gt_outtab-matnr   TO ta_rekap-matnr.
+***        MOVE  gt_outtab-maktx   TO ta_rekap-maktx.
+***        MOVE  gt_outtab-meins   TO ta_rekap-meins.
+***        MOVE  gt_outtab-menge   TO ta_rekap-menge.
+***        COLLECT ta_rekap.
+***      ENDIF.
+***    ENDIF.
+***  ENDLOOP.
+***
+***  DESCRIBE TABLE ta_list LINES zzlin.
+***  IF zzlin > 0.
+***    PERFORM create_spool.
+***    PERFORM file_transfer.
+***    IF p_exp = 'X'.
+***      PERFORM pdf_anbinden_arb_plan.
+***    ENDIF.
+***  ENDIF.
+***
+**** write: /1 'Anzahl Records:', zz_anzhl.
+****!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+****
+***  IF l_valid EQ 'X'.
+***    CALL METHOD g_grid->refresh_table_display.
+***  ENDIF.
+***ENDFORM.                    " generate_pdf
+***
+****--------------------------------------------------------------------*
+****   FORM ANZHL_SEITEN_BERECHNEN                                      *
+****--------------------------------------------------------------------*
+****        ......................                                      *
+****--------------------------------------------------------------------*
+****        ==>> keine USING Parameter                                  *
+****--------------------------------------------------------------------*
+***FORM anzhl_seiten_berechnen.
+***  CLEAR zz_anzln.
+***  CLEAR zz_anzeq.
+***  CLEAR zz_anzpg.
+***
+****........Anzahl Zeilen Langtext.......................................
+***  DESCRIBE TABLE ta_text_lines LINES zzlin.
+***  zz_anzln = zzlin + 2.
+***
+***  DESCRIBE TABLE ta_list LINES zzlin.
+***  zzlin    = zzlin * 2.
+***  zz_anzln = zz_anzln + zzlin.
+***
+**** loop at ta_list.
+****   if not ta_list-equnr is initial.
+****     zz_anzeq = zz_anzeq + 1.
+****   endif.
+**** endloop.
+***
+**** zz_anzln = zz_anzln + zz_anzeq.
+***  zz_anzln = zz_anzln + 13.       " Schlusszeilen
+***
+***  DO.
+***    IF zz_anzln IS INITIAL.
+***      EXIT.
+***    ENDIF.
+***
+****........c_zeipg = Anzahl zeilen / Seite ohne Titelzeilen.............
+***    IF zz_anzln < c_zeipg.
+***      zz_anzpg = zz_anzpg + 1.
+***      EXIT.
+***    ELSE.
+***      zz_anzpg = zz_anzpg + 1.
+***      zz_anzln = zz_anzln - c_zeipg.
+***    ENDIF.
+***  ENDDO.
+***
+****........Rekapitulations-Liste........................................
+***  CLEAR zz_anzln.
+***  DESCRIBE TABLE ta_rekap LINES zz_anzln.
+***  zz_anzln = zz_anzln + 3.       " Berichts Ende
+***
+***  DO.
+***    IF zz_anzln IS INITIAL.
+***      EXIT.
+***    ENDIF.
+***    IF zz_anzln < c_zeipg.
+***      zz_anzpg = zz_anzpg + 1.
+***      EXIT.
+***    ELSE.
+***      zz_anzpg = zz_anzpg + 1.
+***      zz_anzln = zz_anzln - c_zeipg.
+***    ENDIF.
+***  ENDDO.
+***ENDFORM.              " anzhl_seiten_berechnen
+***
+****--------------------------------------------------------------------*
+****   FORM F00_TECHN_PLATZ                                             *
+****--------------------------------------------------------------------*
+****        Techn. Plätze selektieren                                   *
+****--------------------------------------------------------------------*
+****        ===>> keine USING PARAMETERS                                *
+****--------------------------------------------------------------------*
+***FORM f00_techn_platz.
+***  DESCRIBE TABLE s_tplnr LINES zzlin.
+***  IF zzlin GT 0.
+****- vom TP, in 500-er Tranchen wegen zu grossem SQL-Statement
+***    LOOP AT s_tplnr.
+***      zzm1 = sy-tabix MOD 500.
+***      CLEAR zz_ilox_r_strno.
+***      zz_ilox_r_strno-sign   = s_tplnr-sign.
+***      zz_ilox_r_strno-option = s_tplnr-option.
+***      zz_ilox_r_strno-low    = s_tplnr-low.
+***      zz_ilox_r_strno-high   = s_tplnr-high.
+***      APPEND zz_ilox_r_strno TO ilox_rt_strno.
+***      IF zzm1 = 0.
+***        PERFORM call_function_iflos_read.
+***      ENDIF.
+***      CLEAR   zz_ilox_r_strno.
+***    ENDLOOP.
+***    PERFORM call_function_iflos_read.
+***    PERFORM call_func_location_hierarchy.
+***  ENDIF.
+***ENDFORM.                                  " F00_TECHN_PLATZ
+***
+****--------------------------------------------------------------------*
+****   FORM CALL_FUNC_LOCATION_HIERARCHY                                *
+****--------------------------------------------------------------------*
+****        Techn. Plätze struktur auflösen                             *
+****--------------------------------------------------------------------*
+****        ===>> keine USING PARAMETERS                                *
+****--------------------------------------------------------------------*
+***FORM call_func_location_hierarchy.
+***  zz_stufe = 0.
+****....... CALL FUNCTION 'FUNC_LOCATION_HIERARCHY' .....................
+***  CALL FUNCTION 'FUNC_LOCATION_HIERARCHY'
+***    EXPORTING
+***      spras                  = sy-langu
+***      level_limit            = zz_stufe
+****     tabstructure           = 'IFLOT'
+***      tabstructure           = 'IFLOH'
+***      including_root         = 'X'
+****     buffer_bypass          = ' '
+***    IMPORTING
+***      level_found            = sy-index
+***    TABLES
+***      root_tab               = ta_root
+***      iflo_tab               = ta_ifloh_tab
+***    EXCEPTIONS
+***      root_not_found         = 1
+***      read_error             = 2
+***      structure_not_possible = 3
+***      OTHERS                 = 4.
+***
+***  IF sy-subrc = 0.
+****   clear   ta_root.
+****   refresh ta_root.
+****........Tabelle SO_TPLNR Techn.Platz füllen.........................
+***    LOOP AT ta_ifloh_tab.
+***
+****      CLEAR: ls_inob, lv_iflot_tabix.
+****      lv_iflot_tabix = sy-tabix.
+****      READ TABLE tt_inob INTO ls_inob WITH KEY
+****                                      objek = ta_ifloh_tab-tplma.
+****      IF sy-subrc <> 0.
+****        DELETE ta_ifloh_tab INDEX lv_iflot_tabix.
+****        CONTINUE.
+****      ENDIF.
+***
+***      PERFORM check_status USING ta_ifloh_tab-objnr.
+***      IF zz_statu IS INITIAL.
+***        IF ta_ifloh_tab-swerk = s_swerk-low.
+****         ta_root-tplnr = ta_ifloh_tab-tplnr.
+****         append ta_root.
+***          CLEAR ta_tech_objekt.
+***          IF NOT ta_ifloh_tab-tplma IS INITIAL.
+***            WRITE ta_ifloh_tab-tplma TO ta_tech_objekt-tplma.
+***          ENDIF.
+***          ta_tech_objekt-hilev = ta_ifloh_tab-hilev.
+***          WRITE ta_ifloh_tab-tplnr TO ta_tech_objekt-tplnr.
+***          APPEND ta_tech_objekt.
+***        ENDIF.   " ta_ifloh_tab-swerk = s_swerk-low
+***      ENDIF.   " zz_statu is initial
+***    ENDLOOP.
+***  ENDIF.
+***
+***ENDFORM.                      " CALL_FUNC_LOCATION_HIERARCHY
+***
+****--------------------------------------------------------------------*
+****   FORM CALL_FUNCTION_IFLOS_READ                                    *
+****--------------------------------------------------------------------*
+****        Tabelle IFLOS / Technische Objekte verarbeiten              *
+****--------------------------------------------------------------------*
+****        ===>> keine USING PARAMETERS                                *
+****--------------------------------------------------------------------*
+***FORM call_function_iflos_read.
+***  CALL FUNCTION 'ILOX_IFLOS_READ_BY_STRNO'
+***    EXPORTING
+***      it_strno  = ilox_rt_strno
+***      i_alkey   = ' '
+***      i_actvs   = 'X'
+***    IMPORTING
+***      et_iflos  = ta_et_iflos
+***      et_tplnr  = ta_et_tplnr
+***    EXCEPTIONS
+***      not_found = 1
+***      OTHERS    = 2.
+***
+***
+***  IF sy-subrc = 0.
+***
+***
+***
+***    LOOP AT ta_et_tplnr INTO wa_et_tplnr.
+***
+****      lv_funct_loc = wa_et_tplnr.
+****
+****      CALL FUNCTION 'CONVERSION_EXIT_TPLNR_INPUT'
+****        EXPORTING
+****          input  = lv_funct_loc
+****        IMPORTING
+****          output = lv_funct_loc.
+****
+****      SELECT SINGLE klart clint INTO (lv_klart, lv_clint) FROM kssk
+****                    WHERE objek = lv_funct_loc.
+****
+****      IF sy-subrc = 0.
+****        SELECT SINGLE * FROM klah WHERE clint = lv_clint
+****                   AND klart = lv_klart
+****                   AND class IN s_class.
+****
+****        IF sy-subrc = 0.
+***
+***      lv_iflot_tabix = sy-tabix.
+***
+****      CLEAR: ls_inob.
+****      READ TABLE tt_inob INTO ls_inob WITH KEY
+****                                      objek = wa_et_tplnr-tplnr.
+****      IF sy-subrc <> 0.
+****        DELETE ta_et_tplnr INDEX lv_iflot_tabix.
+****        CLEAR: wa_et_tplnr.
+****        CONTINUE.
+****      ENDIF.
+***      MOVE wa_et_tplnr TO ta_root-tplnr. "
+***      APPEND ta_root. "
+****        ELSE.
+****          CLEAR: wa_et_tplnr.
+****          CONTINUE.
+****        ENDIF.
+****      ENDIF.
+***      CLEAR: wa_et_tplnr.
+***    ENDLOOP.
+***    CLEAR   zz_ilox_r_strno.
+***    CLEAR   ilox_rt_strno.
+***    REFRESH ilox_rt_strno.
+***  ENDIF.
+***ENDFORM.              " CALL_FUNCTION_IFLOS_READ
+***
+****--------------------------------------------------------------------*
+****   FORM F05_TECHN_PLATZ                                             *
+****--------------------------------------------------------------------*
+****        Tabelle TA_SORT_OBJEKT aufbereiten                          *
+****--------------------------------------------------------------------*
+****        ===>> keine USING PARAMETERS                                *
+****--------------------------------------------------------------------*
+***FORM f05_techn_platz.
+***  SORT ta_tech_objekt BY hilev
+***                         tplnr
+***                         tplma.
+***
+***  CLEAR   ta_sort_objekt.
+***  REFRESH ta_sort_objekt.
+***  CLEAR   new_tplma.
+***  LOOP AT ta_tech_objekt.
+***
+****    CLEAR:lv_iflot_tabix.
+****      lv_iflot_tabix = sy-tabix.
+****      READ TABLE tt_inob INTO ls_inob WITH KEY
+****                                      objek = ta_tech_objekt-tplnr.
+****      IF sy-subrc <> 0.
+****        DELETE ta_ifloh_tab INDEX lv_iflot_tabix.
+****        CONTINUE.
+****      ENDIF.
+*****      READ TABLE tt_inob INTO ls_inob WITH KEY
+****                                      objek = ta_tech_objekt-tplma.
+****      IF sy-subrc <> 0.
+****        DELETE ta_ifloh_tab INDEX lv_iflot_tabix.
+****        CONTINUE.
+****      ENDIF.
+***
+***    MOVE  ta_tech_objekt-tplma TO new_tplma.
+***    IF ta_tech_objekt-tplma IS INITIAL.
+***      CLEAR ta_sort_objekt.
+***      MOVE ta_tech_objekt-tplnr TO ta_sort_objekt-tplnr.
+***      MOVE ta_tech_objekt-tplma TO ta_sort_objekt-tplma.
+***      COLLECT ta_sort_objekt.
+***    ELSE.
+***      CLEAR ta_sort_objekt.
+***      MOVE ta_tech_objekt-tplnr TO ta_sort_objekt-tplnr.
+***      MOVE ta_tech_objekt-tplma TO ta_sort_objekt-tplma.
+***      COLLECT ta_sort_objekt.
+***      CLEAR   ta_iflo.
+***      REFRESH ta_iflo.
+***      SELECT tplnr tplma objnr
+***             FROM  iflo
+***             APPENDING CORRESPONDING FIELDS OF TABLE ta_iflo
+***             WHERE tplma EQ ta_tech_objekt-tplnr
+***             AND   spras EQ sy-langu.
+***      DESCRIBE TABLE ta_iflo LINES zzlin.
+***      IF zzlin > 0.
+***        SORT ta_iflo BY tplnr.
+***        LOOP AT ta_iflo.
+***          PERFORM check_status USING ta_iflo-objnr.
+***          IF zz_statu IS INITIAL.
+***            CLEAR ta_sort_objekt.
+***            WRITE ta_iflo-tplnr TO ta_sort_objekt-tplnr.
+***            WRITE ta_iflo-tplma TO ta_sort_objekt-tplma.
+***            COLLECT ta_sort_objekt.
+***          ENDIF.
+****.....................................................................
+***          CLEAR   ta_iflo_2.
+***          REFRESH ta_iflo_2.
+***          SELECT tplnr tplma objnr
+***                 FROM  iflo
+***                 APPENDING CORRESPONDING FIELDS OF TABLE ta_iflo_2
+***                 WHERE tplma EQ ta_iflo-tplnr
+***                 AND   spras EQ sy-langu.
+***          DESCRIBE TABLE ta_iflo_2 LINES zzlin.
+***          IF zzlin > 0.
+***            SORT ta_iflo_2 BY tplnr.
+***            LOOP AT ta_iflo_2.
+***              PERFORM check_status USING ta_iflo_2-objnr.
+***              IF zz_statu IS INITIAL.
+***                CLEAR ta_sort_objekt.
+***                WRITE ta_iflo_2-tplnr TO ta_sort_objekt-tplnr.
+***                WRITE ta_iflo_2-tplma TO ta_sort_objekt-tplma.
+***                COLLECT ta_sort_objekt.
+***              ENDIF.
+***            ENDLOOP.
+***          ENDIF.
+****.....................................................................
+***          CLEAR   ta_iflo_3.
+***          REFRESH ta_iflo_3.
+***          SELECT tplnr tplma objnr
+***                 FROM  iflo
+***                 APPENDING CORRESPONDING FIELDS OF TABLE ta_iflo_3
+***                 WHERE tplma EQ ta_iflo-tplnr
+***                 AND   spras EQ sy-langu.
+***          DESCRIBE TABLE ta_iflo_3 LINES zzlin.
+***          IF zzlin > 0.
+***            SORT ta_iflo_3 BY tplnr.
+***            LOOP AT ta_iflo_3.
+***              PERFORM check_status USING ta_iflo_3-objnr.
+***              IF zz_statu IS INITIAL.
+***                CLEAR ta_sort_objekt.
+***                WRITE ta_iflo_3-tplnr TO ta_sort_objekt-tplnr.
+***                WRITE ta_iflo_3-tplma TO ta_sort_objekt-tplma.
+***                COLLECT ta_sort_objekt.
+***              ENDIF.
+***            ENDLOOP.
+***          ENDIF.
+***        ENDLOOP.
+***      ENDIF.
+***    ENDIF.
+***  ENDLOOP.
+***ENDFORM.                                  " f05_techn_platz
+***
+****--------------------------------------------------------------------*
+****   FORM CHECK_STATUS                                                *
+****--------------------------------------------------------------------*
+****        Check Status des Techn. Objekts                             *
+****--------------------------------------------------------------------*
+****             ==>> USING Parameter                                   *
+****                  OBJNR         Objekt-Nummer                       *
+****--------------------------------------------------------------------*
+***FORM check_status USING jest_objnr.
+***  CLEAR zz_statu.
+****........Status 'LÖVM' testen.........................................
+***  SELECT SINGLE stat
+***         FROM   jest
+***         INTO   jest-stat
+***         WHERE  objnr EQ jest_objnr
+***         AND  ( stat  EQ c_lovm
+***         OR     stat  EQ c_inak )
+***         AND    inact EQ ' '.
+***  IF sy-subrc = 0.
+***    zz_statu = 1.
+***  ENDIF.
+***ENDFORM.                 " check_status
+***
+****--------------------------------------------------------------------*
+****   FORM FILL_ZZINTNR                                                *
+****--------------------------------------------------------------------*
+****        ...........                                                 *
+****--------------------------------------------------------------------*
+****        ==>> keine USING Parameter                                  *
+****--------------------------------------------------------------------*
+***FORM fill_zzintnr.
+***  CLEAR wa_zzintnr.
+***  STATICS:
+***    l_rows TYPE i.
+***
+***  ADD 1 TO l_rows.
+***  LOOP AT taalv_zmvi0059_1.
+***    wa_zzintnr = wa_zzintnr + 1.
+***    l_rows     = wa_zzintnr.
+***    MOVE wa_zzintnr TO taalv_zmvi0059_1-zzintnr.
+***    MODIFY taalv_zmvi0059_1 INDEX sy-tabix.
+***  ENDLOOP.
+***ENDFORM.               " fill_zzintnr
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_MARA                                                 *
+****--------------------------------------------------------------------*
+****        Materialstammdaten lesen                                    *
+****--------------------------------------------------------------------*
+****             ==>> USING Parameter                                   *
+****                  MATNR         Material-Nummer                     *
+****--------------------------------------------------------------------*
+***FORM select_mara USING mara_matnr.
+***  CLEAR mara-mtart.
+***  IF NOT mara_matnr IS INITIAL.
+***    SELECT SINGLE mtart meins
+***           FROM   mara
+***           INTO  (mara-mtart, mara-meins)
+***           WHERE  matnr EQ mara_matnr.
+***    IF sy-subrc <> 0.
+***      CLEAR mara-mtart.
+***      CLEAR mara-meins.
+***    ENDIF.
+***  ENDIF.
+***ENDFORM.                 " select_mara
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_MAKT                                                 *
+****--------------------------------------------------------------------*
+****        Materialkurztexte lesen                                     *
+****--------------------------------------------------------------------*
+****             ==>> USING Parameter                                   *
+****                  MATNR         Material-Nummer                     *
+****--------------------------------------------------------------------*
+***FORM select_makt USING makt_matnr.
+***  CLEAR makt-maktx.
+***  IF NOT makt_matnr IS INITIAL.
+***    SELECT SINGLE maktx
+***           FROM   makt
+***           INTO   makt-maktx
+***           WHERE  matnr EQ makt_matnr
+***           AND    spras EQ sy-langu.
+***    IF sy-subrc <> 0.
+***      CLEAR makt-maktx.
+***    ENDIF.
+***  ENDIF.
+***ENDFORM.                 " select_makt
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_MAST_FILL_TAOUT                                      *
+****--------------------------------------------------------------------*
+****        ............                                                *
+****--------------------------------------------------------------------*
+****             ==>> USING Parameter                                   *
+****                  MATNR         Material-Nummer                     *
+****--------------------------------------------------------------------*
+***FORM select_mast_fill_taout USING mast_matnr.
+****........LSimonet, 02-Mai-2007........................................
+****** [Beg] - Project Rose - Handling hardcoding
+****  CASE s_swerk-low.
+***  CASE zcl_org_element_utility=>get_orig_werks( s_swerk-low ).
+****** [End] - Project Rose - Handling hardcoding
+***    WHEN '0013'.
+***      SELECT * FROM mast
+***               WHERE matnr EQ mast_matnr
+***               AND   werks IN s_swerk
+***               AND   stlan EQ '4'.
+***        PERFORM fill_taout_with_mast_date.
+***      ENDSELECT.
+***      IF sy-subrc <> 0.
+***        SELECT * FROM mast
+***                 WHERE matnr EQ mast_matnr
+***                 AND   werks EQ '0003'
+***                 AND   stlan EQ '4'.
+***          PERFORM fill_taout_with_mast_date.
+***        ENDSELECT.
+***      ENDIF.
+***    WHEN OTHERS.
+***      SELECT * FROM mast
+***               WHERE matnr EQ mast_matnr
+***               AND   werks IN s_swerk
+***               AND   stlan EQ '4'.
+***        PERFORM fill_taout_with_mast_date.                  "SiL020507
+***      ENDSELECT.
+***  ENDCASE.
+***ENDFORM.                " select_mast_fill_taout
+***
+****--------------------------------------------------------------------*
+****   FORM FILL_TAOUT_WITH_MAST_DATE                                   *
+****--------------------------------------------------------------------*
+****        ............                                                *
+****--------------------------------------------------------------------*
+****             ==>> keine Using Parameter                             *
+****--------------------------------------------------------------------*
+***FORM fill_taout_with_mast_date.
+****........LSimonet, 02-Mai-2007........................................
+***  MOVE mast-matnr TO ta_out-matnr.
+***  MOVE mast-stlnr TO ta_out-stlnr.
+***  MOVE mast-stlan TO ta_out-stlan.
+***  zz_stufe = ta_sel-stufe + 1.
+***  MOVE zz_stufe   TO ta_out-stufe.
+***  MOVE '0000'     TO ta_out-posnr.
+***  COLLECT ta_out.
+***ENDFORM.                " fill_taout_with_mast_date
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_SINGLE_MAST                                          *
+****--------------------------------------------------------------------*
+****        Verbindung Material - Stueckliste lesen                     *
+****--------------------------------------------------------------------*
+****             ==>> USING Parameter                                   *
+****                  MATNR         Material-Nummer                     *
+****--------------------------------------------------------------------*
+***FORM select_single_mast USING mast_matnr.
+****........LSimonet, 02-Mai-2007........................................
+****** [Beg] - Project Rose - Handling hardcoding
+****  CASE s_swerk-low.
+***  CASE zcl_org_element_utility=>get_orig_werks( s_swerk-low ).
+****** [End] - Project Rose - Handling hardcoding
+***    WHEN '0013'.
+***      SELECT SINGLE *
+***             FROM   mast
+***             WHERE  matnr EQ mast_matnr
+***             AND    werks IN s_swerk
+***             AND    stlan EQ '4'.
+***      IF sy-subrc <> 0.
+***        SELECT SINGLE *
+***               FROM   mast
+***               WHERE  matnr EQ mast_matnr
+***               AND    werks EQ '0003'
+***               AND    stlan EQ '4'.
+***      ENDIF.
+***    WHEN OTHERS.
+***      SELECT SINGLE *
+***             FROM   mast
+***             WHERE  matnr EQ mast_matnr
+***             AND    werks IN s_swerk
+***             AND    stlan EQ '4'.
+***  ENDCASE.
+***ENDFORM.                " select_single_mast
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_IFLOTX                                               *
+****--------------------------------------------------------------------*
+****        Technischer Platz: Kurztexte lesen                          *
+****--------------------------------------------------------------------*
+****             ==>> USING Parameter                                   *
+****                  TPLNR         Techn.Platz-Nummer                  *
+****--------------------------------------------------------------------*
+***FORM select_iflotx USING iflotx_tplnr.
+***  IF NOT iflotx_tplnr IS INITIAL.
+***    SELECT SINGLE tplnr
+***           FROM   iflos
+***           INTO   iflos-tplnr
+***           WHERE  strno EQ iflotx_tplnr.
+***    IF sy-subrc <> 0.
+***      CLEAR iflos-tplnr.
+***    ELSE.
+***      SELECT SINGLE pltxt
+***             FROM   iflotx
+***             INTO   iflotx-pltxt
+***             WHERE  tplnr EQ iflos-tplnr
+***             AND    spras EQ sy-langu.
+***    ENDIF.
+***    IF sy-subrc <> 0.
+***      CLEAR iflotx-pltxt.
+***    ENDIF.
+***  ENDIF.
+***ENDFORM.                 " select_iflotx
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_SINGLE_MPLA                                          *
+****--------------------------------------------------------------------*
+****        lesen Tab. MPLA Maintenance Plan                            *
+****--------------------------------------------------------------------*
+****        ==>> USING Parameter                                        *
+****             -->>  WARPL                                            *
+****--------------------------------------------------------------------*
+***FORM select_single_mpla USING mpla_warpl.
+***  SELECT SINGLE wptxt
+***         FROM   mpla
+***         INTO   mpla-wptxt
+***         WHERE  warpl EQ mpla_warpl.
+***  IF sy-subrc <> 0.
+***    CLEAR mpla-wptxt.
+***  ENDIF.
+***ENDFORM.              " select_mpla
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_SINGLE_PLKO                                          *
+****--------------------------------------------------------------------*
+****        lesen Tab. PLKO Plan - Kopf                                 *
+****--------------------------------------------------------------------*
+****        ==>> USING Parameter                                        *
+****             -->>  PLNTY                                            *
+****                   PLNNR                                            *
+****             -->>  PLNAL                                            *
+****--------------------------------------------------------------------*
+***FORM select_single_plko USING plko_plnty plko_plnnr plko_plnal.
+***  SELECT SINGLE ktext
+***         FROM   plko
+***         INTO   plko-ktext
+***         WHERE  plnty EQ plko_plnty
+***         AND    plnnr EQ plko_plnnr
+***         AND    plnal EQ plko_plnal.
+***  IF sy-subrc <> 0.
+***    CLEAR plko-ktext.
+***  ENDIF.
+***ENDFORM.              " select_single_plko
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_SINGLE_PLPO                                          *
+****--------------------------------------------------------------------*
+****        lesen Tab. PLPO Plan - Vorgang                              *
+****--------------------------------------------------------------------*
+****        ==>> USING Parameter                                        *
+****             -->>  PLNTY                                            *
+****                   PLNNR                                            *
+****             -->>  PLNAL                                            *
+****--------------------------------------------------------------------*
+***FORM select_single_plpo USING plpo_plnty plpo_plnnr plpo_plnkn.
+***  SELECT SINGLE plnty plnnr plnkn vornr ltxa1
+***         FROM   plpo
+***         INTO  (plpo-plnty, plpo-plnnr, plpo-plnkn,
+***                plpo-vornr, plpo-ltxa1)
+***         WHERE  plnty EQ plpo_plnty
+***         AND    plnnr EQ plpo_plnnr
+***         AND    plnkn EQ plpo_plnkn.
+***  IF sy-subrc <> 0.
+***    CLEAR plpo-plnty. CLEAR plpo-plnnr. CLEAR plpo-plnkn.
+***    CLEAR plpo-vornr. CLEAR plpo-ltxa1.
+***  ENDIF.
+***ENDFORM.              " select_single_plpo
+***
+****--------------------------------------------------------------------*
+****   FORM SELECT_VIMPLA                                               *
+****--------------------------------------------------------------------*
+****        lesen Tab. AFIH  Auftragskopf Instandhaltung und            *
+****                   CAUFV (View auf Auftragsköpfe PPS/RK)            *
+****--------------------------------------------------------------------*
+****        ==>> keine USING Parameter                                  *
+****--------------------------------------------------------------------*
+***FORM select_vimpla.
+***  CLEAR   tvimpla.
+***  REFRESH tvimpla.
+***
+***  SELECT SINGLE tplnr strno
+***         FROM   iflos
+***         INTO  (iflos-tplnr, iflos-strno)
+***         WHERE  strno IN s_tplnr.
+***
+***  SELECT warpl wptxt tplnr plnnr plnal
+***         FROM  vimpla
+***         INTO  CORRESPONDING FIELDS OF TABLE tvimpla
+****          package size 500
+***         WHERE iwerk IN s_swerk
+***         AND   tplnr EQ iflos-tplnr.
+***ENDFORM.              " select_vimpla
+***
+****--------------------------------------------------------------------*
+****   FORM W10_TP_STUELI_WERK                                          *
+****--------------------------------------------------------------------*
+****        Zuordnung Technischer Platz - Stücklistenwer                *
+****--------------------------------------------------------------------*
+****        ==>> Using Parameters                                       *
+****            -->> TPLNR                                              *
+****--------------------------------------------------------------------*
+***FORM w10_tp_stueli_werk USING iflot_tplnr.
+****........LSimonet, 02-Mai-2007........................................
+***  CLEAR h_swerk.
+****** [Beg] - Project Rose - Handling hardcoding
+****  CASE s_swerk-low.
+***  CASE zcl_org_element_utility=>get_orig_werks( s_swerk-low ).
+****** [End] - Project Rose - Handling hardcoding
+***    WHEN '0013'.
+***      SELECT SINGLE * FROM zvvcbpm02
+***       WHERE tplnr = iflot-tplnr.
+***      IF sy-subrc = 0.
+***        h_swerk = zvvcbpm02-werks.
+***      ELSE.
+***        h_swerk = '0003'.
+***      ENDIF.
+***  ENDCASE.
+***ENDFORM.           " w10_tp_stueli_werk
+***
+****--------------------------------------------------------------------*
+****   FORM W10_TP_STUELI                                               *
+****--------------------------------------------------------------------*
+****        Drucken Stückliste Techn. Platz                             *
+****--------------------------------------------------------------------*
+****        ==>> Using Parameters                                       *
+****            -->> TPLNR                                              *
+****--------------------------------------------------------------------*
+***FORM w10_tp_stueli USING iflot_tplnr.
+***  SELECT SINGLE submt
+***         FROM   iflot
+***         INTO   iflot-submt
+***         WHERE  tplnr EQ iflot_tplnr.
+***
+****........je Material-Nr neue Zeile....................................
+***  CLEAR zz_stlst.
+***  CLEAR zz_stlnr.
+***
+****........Stückliste...................................................
+***  IF NOT iflot-submt IS INITIAL.
+***    PERFORM w10_stueli_lesen USING iflot-submt.
+***  ENDIF.
+***ENDFORM.           " w10_tp_stueli
+***
+****--------------------------------------------------------------------*
+****   FORM W10_V_EQUI                                                  *
+****--------------------------------------------------------------------*
+****        Tech.Objekte PM (EQUI, Tech.Platz) (VIEW)                   *
+****--------------------------------------------------------------------*
+****        ==>> Using Parameters                                       *
+****            -->> TPLNR                                              *
+****--------------------------------------------------------------------*
+***FORM w10_v_equi USING v_equi_tplnr.
+***  CLEAR   ta_v_equi.
+***  REFRESH ta_v_equi.
+***  SELECT equnr matnr submt objnr
+***         FROM  v_equi
+***         INTO  (v_equi-equnr, v_equi-matnr,
+***                v_equi-submt, v_equi-objnr)
+***         WHERE tplnr EQ v_equi_tplnr
+***         AND   swerk IN s_swerk
+***         AND   datbi >= sy-datum.
+***    CLEAR ta_v_equi.
+***    ta_v_equi-equnr = v_equi-equnr.
+***    ta_v_equi-matnr = v_equi-matnr.
+***    ta_v_equi-submt = v_equi-submt.
+***    ta_v_equi-objnr = v_equi-objnr.
+***    COLLECT ta_v_equi.
+***  ENDSELECT.
+***
+***  LOOP AT ta_v_equi.
+****........je EQUI neue Zeile...........................................
+***    FORMAT COLOR 5 INTENSIFIED ON.
+***    MOVE ta_v_equi-equnr TO wa_equnr.
+***    MOVE ta_v_equi-equnr TO taalv_zmvi0059_1-equnr.
+***
+***    FORMAT RESET.
+***    SELECT SINGLE eqktx
+***           FROM   eqkt
+***           INTO   eqkt-eqktx
+***           WHERE  equnr EQ ta_v_equi-equnr
+***           AND    spras EQ sy-langu.
+***    IF sy-subrc <> 0.
+***      CLEAR eqkt-eqktx.
+***    ENDIF.
+***
+***    MOVE ta_v_equi-equnr TO wa_equnr.
+***    IF wa_equnr IS NOT INITIAL.
+***      MOVE eqkt-eqktx TO wa_zzeqktx.
+***    ENDIF.
+***
+***    READ TABLE taalv_zmvi0059_1 WITH KEY zztecho = wa_strno.
+***    IF sy-subrc = 0 AND
+***      taalv_zmvi0059_1-equnr IS INITIAL.
+***      MOVE wa_equnr   TO taalv_zmvi0059_1-equnr.
+***      IF taalv_zmvi0059_1-equnr IS NOT INITIAL.
+***        MOVE eqkt-eqktx TO taalv_zmvi0059_1-zzeqktx.
+***      ENDIF.
+***      MODIFY taalv_zmvi0059_1 INDEX sy-tabix.
+***
+***    ELSE.
+***      CLEAR taalv_zmvi0059_1.
+***      MOVE wa_strno   TO taalv_zmvi0059_1-zztecho.
+***      MOVE wa_ktx01   TO taalv_zmvi0059_1-ktx01.
+***      MOVE wa_equnr   TO taalv_zmvi0059_1-equnr.
+***      MOVE wa_zzeqktx TO taalv_zmvi0059_1-zzeqktx.
+***      COLLECT taalv_zmvi0059_1.
+***    ENDIF.
+***
+****........je Material-Nr neue Zeile....................................
+***    CLEAR zz_stlst.
+***    CLEAR zz_stlnr.
+***    IF NOT ta_v_equi-matnr IS INITIAL.
+***      PERFORM select_mara USING ta_v_equi-matnr.
+***      PERFORM select_single_mast USING ta_v_equi-matnr.     "SiL020507
+***      IF sy-subrc <> 0.
+***        CLEAR ta_new.
+***        MOVE ta_v_equi-matnr TO ta_new-idnrk.
+***        ADD  1               TO ta_new-menge.
+***        MOVE mara-meins      TO ta_new-meins.
+***        MOVE wa_strno        TO ta_new-strno.
+***        MOVE wa_equnr        TO ta_new-equnr.
+***        COLLECT ta_new.
+***      ENDIF.
+***    ENDIF.
+***
+****........Stückliste...................................................
+***    IF NOT ta_v_equi-submt IS INITIAL.
+***      PERFORM w10_stueli_lesen USING ta_v_equi-submt.
+***    ENDIF.
+***  ENDLOOP.
+***ENDFORM.           " w10_v_equi
+***
+****--------------------------------------------------------------------*
+****   FORM W10_STUELI_LESEN                                            *
+****--------------------------------------------------------------------*
+****        Tabelle MAST lesen (Stückliste)                             *
+****--------------------------------------------------------------------*
+****        ==>> Using Parameters                                       *
+****            -->> MATNR                                              *
+****--------------------------------------------------------------------*
+***FORM w10_stueli_lesen USING w10_matnr.
+***  CLEAR zz_stufe.
+***  CLEAR ta_sel. REFRESH ta_sel. FREE ta_sel.
+***  CLEAR ta_out. REFRESH ta_out. FREE ta_out.
+***  CLEAR ta_add. REFRESH ta_add. FREE ta_add.
+***
+***  PERFORM select_single_mast USING w10_matnr.               "SiL020507
+***  IF sy-subrc = 0.
+***    MOVE wa_strno   TO ta_sel-strno.
+***    MOVE wa_equnr   TO ta_sel-equnr.
+***    MOVE mast-matnr TO ta_sel-matnr.
+***    MOVE mast-stlnr TO ta_sel-stlnr.
+***    MOVE mast-stlan TO ta_sel-stlan.
+***    zz_stufe = zz_stufe + 1.
+***    MOVE zz_stufe   TO ta_sel-stufe.
+***    APPEND ta_sel.
+***    PERFORM w30_stuli.
+***    PERFORM w30_f015.
+***    PERFORM w30_f020.
+***    PERFORM w30_f005.
+***  ENDIF.
+***ENDFORM.             " w10_stueli_lesen
+***
+****--------------------------------------------------------------------*
+****   FORM W20_MATERIAL_DATEN                                          *
+****--------------------------------------------------------------------*
+****        Materialdaten ausgeben                                      *
+****--------------------------------------------------------------------*
+****        ==>> Using Parameters                                       *
+****             -->>  MATNR                                            *
+****                   STLNR        Stücklisten-Nummer
+****                   STLST        Stücklisten-Position                *
+****                   M / S        M = Material / S = Stückliste       *
+****--------------------------------------------------------------------*
+***FORM w20_material_daten USING wa_matnr wa_stlnr wa_stlst wa_parms.
+***  IF NOT wa_matnr IS INITIAL.
+***    PERFORM select_mara USING wa_matnr.
+***
+****........S = Stückliste...............................................
+***    IF wa_parms = 'S'.
+***      PERFORM select_single_mast USING wa_matnr.            " SiL020507
+***      IF sy-subrc = 0.
+***        FORMAT COLOR 3 INTENSIFIED OFF.
+***      ENDIF.
+***    ENDIF.
+***  ENDIF.
+***ENDFORM.           " w20_material_daten
+***
+****--------------------------------------------------------------------*
+****   FORM W25_WRITE_ZEILE                                             *
+****--------------------------------------------------------------------*
+****        Materialbestände ausgeben                                   *
+****--------------------------------------------------------------------*
+****        ==>> USING Parameters                                       *
+****             -->>  MATNR                                            *
+****                   Stlst      Stücklisten-Stufe                     *
+****--------------------------------------------------------------------*
+***FORM w25_write_zeile USING w25_matnr w25_stlst.
+***  MOVE w25_matnr TO wa_matnr.
+***ENDFORM.           " w25_write_zeile
+***
+****--------------------------------------------------------------------*
+****   FORM W30_STULI                                                   *
+****--------------------------------------------------------------------*
+****        Stückliste aufbereiten                                      *
+****--------------------------------------------------------------------*
+****        ==>> keine Using Parameters                                 *
+****--------------------------------------------------------------------*
+***FORM w30_stuli.
+***  LOOP AT ta_sel.
+***    MOVE ta_sel-matnr TO zz_matnr.
+***    MOVE ta_sel-stlnr TO zz_stlnr.
+***    MOVE ta_sel-stlan TO zz_stlan.
+***    MOVE ta_sel-stufe TO zz_stufe.
+***    PERFORM w30_call_function_get_stpo USING ta_sel-stlnr 'M'.
+***  ENDLOOP.
+***ENDFORM.                                                    " w30_stuli
+***
+****--------------------------------------------------------------------*
+****   FORM W30_CALL_FUNCTION_GET_STPO                                  *
+****--------------------------------------------------------------------*
+****        .......................                                     *
+****--------------------------------------------------------------------*
+****        ===> USING Parameters                                       *
+****             --->> STPOB_STLNR                                      *
+****                   STPOB_STLTY                                      *
+****--------------------------------------------------------------------*
+***FORM w30_call_function_get_stpo USING stpob_stlnr stpob_stlty.
+***  CLEAR   stpob.
+***  REFRESH stpob.
+***  FREE    stpob.
+***  stpob-stlnr = stpob_stlnr.
+***  stpob-stlty = stpob_stlty.
+***
+***  CALL FUNCTION 'GET_STPO'
+***    EXPORTING
+***      all             = 'X'
+***      alter           = ' '
+***      datub           = c_datub
+***      datuv           = c_datuv
+***      no_buffer       = ' '
+***      set             = 'X'
+***      valid           = ' '
+***    TABLES
+***      add_wa          = istar
+***      wa              = stpob
+***    EXCEPTIONS
+***      call_invalid    = 01
+***      end_of_table    = 02
+***      get_without_set = 03
+***      key_incomplete  = 04
+***      key_invalid     = 05
+***      no_record_found = 06.
+***
+***  CLEAR   stpox.
+***  REFRESH stpox.
+***  FREE    stpox.
+***
+***  SORT stpob BY stlty
+***                stlnr
+***                stlkn
+***                datuv.
+***
+***  CLEAR zz_stpoxi.
+***  LOOP AT stpob.
+***    CLEAR stpox.
+***    PERFORM w30_select_stas.
+***    SORT stasx BY stlty
+***                  stlnr
+***                  stlkn
+***                  datuv.
+***
+***    IF sy-subrc > 0.
+***      MOVE-CORRESPONDING stpob TO stpox.
+***      APPEND stpox.
+***      zz_stpoxi = zz_stpoxi + 1.
+***    ENDIF.
+***
+***    LOOP AT stasx.
+***      MOVE-CORRESPONDING stpob TO stpox.
+***      IF stasx-lkenz = 'X'.
+***        stpox-datub = stasx-datuv.
+***        MODIFY stpox INDEX zz_stpoxi.
+***      ELSE.
+***        APPEND stpox.
+***        zz_stpoxi = zz_stpoxi + 1.
+***      ENDIF.
+***    ENDLOOP.
+***  ENDLOOP.
+***
+***  SORT stpox BY posnr datub.
+***
+***  CLEAR   stpob.
+***  REFRESH stpob.
+***  FREE    stpob.
+***
+***  LOOP AT stpox.
+***    CLEAR stpob.
+***    IF stpox-datub >= sy-datum.
+***      MOVE-CORRESPONDING stpox TO stpob.
+***      APPEND stpob.
+***    ENDIF.
+***  ENDLOOP.
+***
+***  LOOP AT stpob.
+***    CLEAR ta_out.
+***    MOVE zz_matnr      TO ta_out-matnr.
+***    MOVE zz_stlnr      TO ta_out-stlnr.
+***    MOVE zz_stlan      TO ta_out-stlan.
+***    MOVE zz_stufe      TO ta_out-stufe.
+***    MOVE stpob-posnr   TO ta_out-posnr.
+***    MOVE stpob-idnrk   TO ta_out-idnrk.
+***    MOVE stpob-stlty   TO ta_out-stlty.
+***    MOVE stpob-stlkn   TO ta_out-stlkn.
+***    MOVE stpob-stpoz   TO ta_out-stpoz.
+***    MOVE stpob-menge   TO ta_out-menge.
+***    MOVE stpob-meins   TO ta_out-meins.
+***    MOVE wa_strno      TO ta_out-strno.
+***    MOVE wa_equnr      TO ta_out-equnr.
+***    COLLECT ta_out.
+***  ENDLOOP.
+***ENDFORM.               " w30_call_function_get_stpo
+***
+****--------------------------------------------------------------------*
+****   FORM W30_SELECT_STAS                                             *
+****--------------------------------------------------------------------*
+****        Lesen Tabelle STAS                                          *
+****--------------------------------------------------------------------*
+****        keine USING Parameters                                      *
+****--------------------------------------------------------------------*
+***FORM w30_select_stas.
+***  CLEAR stasx. REFRESH stasx. FREE stasx.
+***  SELECT * FROM stas
+***           APPENDING CORRESPONDING FIELDS OF TABLE stasx
+***           WHERE stlty = stpob-stlty
+***           AND   stlnr = stpob-stlnr
+***           AND   stlal = '01'
+***           AND   stlkn = stpob-stlkn.
+***
+***  IF sy-subrc > 0.
+***    CLEAR stasx.
+***  ENDIF.
+***ENDFORM.             " w30_select_stas
+***
+****--------------------------------------------------------------------*
+****   FORM w30_F005                                                    *
+****--------------------------------------------------------------------*
+****        Weiterverarbeitung TA_INP                                   *
+****--------------------------------------------------------------------*
+****        ==> keine Using Parameters                                  *
+****--------------------------------------------------------------------*
+***FORM w30_f005.
+***  CLEAR zz_retcd.
+***
+***  WHILE zz_retcd EQ 0.
+***    LOOP AT ta_sel.
+***      IF ta_sel-posnr = '0000'.
+***      ELSE.
+***        PERFORM select_mast_fill_taout USING ta_sel-idnrk.  "SiL020507
+****       select * from mast
+****                where matnr eq ta_sel-idnrk
+****                and   werks in s_swerk
+****                and   stlan eq '4'.
+****         move mast-matnr to ta_out-matnr.
+****         move mast-stlnr to ta_out-stlnr.
+****         move mast-stlan to ta_out-stlan.
+****         zz_stufe = ta_sel-stufe + 1.
+****         move zz_stufe   to ta_out-stufe.
+****         move '0000'     to ta_out-posnr.
+****         collect ta_out.
+****       endselect.
+***        IF sy-subrc = 0.
+***          MOVE mast-matnr TO zz_matnr.
+***          MOVE mast-stlnr TO zz_stlnr.
+***          MOVE mast-stlan TO zz_stlan.
+***          PERFORM w30_call_function_get_stpo USING mast-stlnr 'M'.
+***        ENDIF.
+***        PERFORM w30_f015.
+***      ENDIF.
+***    ENDLOOP.
+***
+***    PERFORM w30_f020.
+***    IF ta_sel IS INITIAL.
+***      zz_retcd = 1.
+***    ENDIF.
+***  ENDWHILE.
+***ENDFORM.                                                    " w30_f005
+***
+****--------------------------------------------------------------------*
+****   FORM W30_F010                                                    *
+****--------------------------------------------------------------------*
+****        Weiterverarbeitung TA_INP                                   *
+****--------------------------------------------------------------------*
+****        ==> keine Using Parameters                                  *
+****--------------------------------------------------------------------*
+***FORM w30_f010.
+***  IF ta_out IS INITIAL.
+***    EXIT.
+***  ENDIF.
+***
+***  LOOP AT ta_out.
+***    IF ta_out-posnr NE '0000'.
+***      CLEAR ta_new.
+***      MOVE ta_out-idnrk TO ta_new-idnrk.
+***      MOVE ta_out-menge TO ta_new-menge.
+***      MOVE ta_out-meins TO ta_new-meins.
+***      MOVE ta_out-strno TO ta_new-strno.
+***      MOVE ta_out-equnr TO ta_new-equnr.
+***      COLLECT ta_new.
+***
+****........Parameter für Stückliste    = 'S'
+***      SHIFT ta_out-stlnr LEFT DELETING LEADING '0'.
+***      SHIFT ta_out-stlnr RIGHT DELETING TRAILING space.
+***      PERFORM w20_material_daten USING ta_out-idnrk
+***                                       ta_out-stlnr
+***                                       ta_out-stufe
+***                                       'S'.
+***    ENDIF.
+***  ENDLOOP.
+***  CLEAR   ta_out.
+***  REFRESH ta_out.
+***  FREE    ta_out.
+***ENDFORM.                                                    "w30_f010
+***
+****--------------------------------------------------------------------*
+****   FORM W30_F015                                                    *
+****--------------------------------------------------------------------*
+****        Tabelle TA_OUT in Tabelle TA_ADD übertragen                 *
+****--------------------------------------------------------------------*
+****        ==> keine Using Parameters                                  *
+****--------------------------------------------------------------------*
+***FORM w30_f015.
+***  SORT ta_out BY posnr.
+***  LOOP AT ta_out.
+***    MOVE ta_out-matnr TO ta_add-matnr.
+***    MOVE ta_out-stlnr TO ta_add-stlnr.
+***    MOVE ta_out-stlan TO ta_add-stlan.
+***    MOVE ta_out-stufe TO ta_add-stufe.
+***    MOVE ta_out-posnr TO ta_add-posnr.
+***    MOVE ta_out-idnrk TO ta_add-idnrk.
+***    MOVE ta_out-stlty TO ta_add-stlty.
+***    MOVE ta_out-stlkn TO ta_add-stlkn.
+***    MOVE ta_out-stpoz TO ta_add-stpoz.
+***    MOVE ta_out-menge TO ta_add-menge.
+***    MOVE ta_out-meins TO ta_add-meins.
+***    MOVE ta_out-strno TO ta_add-strno.
+***    MOVE ta_out-equnr TO ta_add-equnr.
+***    APPEND ta_add.
+***  ENDLOOP.
+***  PERFORM w30_f010.
+***ENDFORM.                                                    " w30_f015
+***
+****--------------------------------------------------------------------*
+****   FORM W30_F020                                                    *
+****--------------------------------------------------------------------*
+****        Tabelle TA_ADD in Tabelle TA_SEL übertragen                 *
+****--------------------------------------------------------------------*
+****        ==> keine Using Parameters                                  *
+****--------------------------------------------------------------------*
+***FORM w30_f020.
+***  CLEAR   ta_sel.
+***  REFRESH ta_sel.
+***  FREE    ta_sel.
+***
+***  LOOP AT ta_add.
+***    MOVE ta_add-matnr TO ta_sel-matnr.
+***    MOVE ta_add-stlnr TO ta_sel-stlnr.
+***    MOVE ta_add-stlan TO ta_sel-stlan.
+***    MOVE ta_add-stufe TO ta_sel-stufe.
+***    MOVE ta_add-posnr TO ta_sel-posnr.
+***    MOVE ta_add-idnrk TO ta_sel-idnrk.
+***    MOVE ta_add-stlty TO ta_sel-stlty.
+***    MOVE ta_add-stlkn TO ta_sel-stlkn.
+***    MOVE ta_add-stpoz TO ta_sel-stpoz.
+***    MOVE ta_add-menge TO ta_sel-menge.
+***    MOVE ta_add-meins TO ta_sel-meins.
+***    MOVE ta_add-strno TO ta_sel-strno.
+***    MOVE ta_add-equnr TO ta_sel-equnr.
+***    APPEND ta_sel.
+***  ENDLOOP.
+***
+***  CLEAR   ta_add.
+***  REFRESH ta_add.
+***  FREE    ta_add.
+***ENDFORM.                                                    " w30_f020
+***
+****--------------------------------------------------------------------*
+****   FORM FILE_TRANSFER                                               *
+****--------------------------------------------------------------------*
+****        Daten an Subsystem weitergeben                              *
+****--------------------------------------------------------------------*
+****        ==> keine Using Parameters                                  *
+****--------------------------------------------------------------------*
+***FORM file_transfer.
+****........get spool number for PDF download
+***  REFRESH r_rqfin.
+***  r_rqfin-low = 'C'.
+***  r_rqfin-sign = 'I'.
+***  r_rqfin-option = 'EQ'.
+***  APPEND r_rqfin.
+***  r_rqfin-low = '.'.
+***  APPEND r_rqfin.
+***
+***  CLEAR   r_cretime.
+***  REFRESH r_cretime.
+***  r_cretime-sign      = 'I'.
+***  r_cretime-option    = 'BT'.
+***  r_cretime-low       = sy-datum.
+***  r_cretime-low+8(8)  = '00000000'.
+***  r_cretime-high      = sy-datum.
+***  r_cretime-high+8(8) = '23595900'.
+***  APPEND r_cretime.
+***
+****........find the spool list
+***  SELECT * FROM tsp01
+***         INTO CORRESPONDING FIELDS OF TABLE ta_tsp01
+***         WHERE rqfinal    IN r_rqfin AND
+***               rqclient   EQ sy-mandt AND
+***               rqowner    EQ sy-uname AND
+***               rq0name    EQ 'SCRIPT' AND
+***               rq2name    EQ sy-uname AND
+***               rqreceiver EQ 'PM_DOC' AND
+***               rqcretime  IN r_cretime.
+***
+***  SORT ta_tsp01 DESCENDING BY rqcretime.
+***
+***  LOOP AT ta_tsp01.
+***    MOVE-CORRESPONDING ta_tsp01 TO tsp01.
+***
+****........Überprüfen der Zugriffsrechte auf einen Spoolauftrag
+***    CALL FUNCTION 'RSPO_CHECK_JOB_PERMISSION'
+***      EXPORTING
+***        access        = 'BASE'
+***        spoolreq      = tsp01
+***      EXCEPTIONS
+***        no_permission = 1
+***        OTHERS        = 2.
+***
+****........check authority
+***    CHECK sy-subrc = 0.
+***
+****........here inspiration comes from RSTXPDFT4
+***
+***    IF ta_tsp01-rqdoctype(3) = 'OTF'.
+***      CALL FUNCTION 'CONVERT_OTFSPOOLJOB_2_PDF'
+***        EXPORTING
+***          src_spoolid              = tsp01-rqident
+***          no_dialog                = ' '
+****         DST_DEVICE               =
+****         PDF_DESTINATION          =
+***        IMPORTING
+***          pdf_bytecount            = numbytes
+***          pdf_spoolid              = pdfspoolid
+****         OTF_PAGECOUNT            =
+***          btc_jobname              = jobname
+***          btc_jobcount             = jobcount
+***        TABLES
+***          pdf                      = pdf
+***        EXCEPTIONS
+***          err_no_otf_spooljob      = 1
+***          err_no_spooljob          = 2
+***          err_no_permission        = 3
+***          err_conv_not_possible    = 4
+***          err_bad_dstdevice        = 5
+***          user_cancelled           = 6
+***          err_spoolerror           = 7
+***          err_temseerror           = 8
+***          err_btcjob_open_failed   = 9
+***          err_btcjob_submit_failed = 10
+***          err_btcjob_close_failed  = 11.
+***
+***      CASE sy-subrc.
+***        WHEN 0.
+****         message id 'ZI' type 'I' number '015' with text-m16.
+***        WHEN 1.
+***          MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m12.
+***          EXIT.
+***        WHEN 2.
+***          MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m13.
+***          EXIT.
+***        WHEN 3.
+***          MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m14.
+***          EXIT.
+***        WHEN OTHERS.
+***          MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m15.
+***          EXIT.
+***      ENDCASE.
+***    ELSE.
+***      CALL FUNCTION 'CONVERT_ABAPSPOOLJOB_2_PDF'
+***        EXPORTING
+***          src_spoolid              = tsp01-rqident
+***          no_dialog                = ' '
+****         DST_DEVICE               =
+****         PDF_DESTINATION          =
+***        IMPORTING
+***          pdf_bytecount            = numbytes
+***          pdf_spoolid              = pdfspoolid
+****         LIST_PAGECOUNT           =
+***          btc_jobname              = jobname
+***          btc_jobcount             = jobcount
+***        TABLES
+***          pdf                      = pdf
+***        EXCEPTIONS
+***          err_no_abap_spooljob     = 1
+***          err_no_spooljob          = 2
+***          err_no_permission        = 3
+***          err_conv_not_possible    = 4
+***          err_bad_destdevice       = 5
+***          user_cancelled           = 6
+***          err_spoolerror           = 7
+***          err_temseerror           = 8
+***          err_btcjob_open_failed   = 9
+***          err_btcjob_submit_failed = 10
+***          err_btcjob_close_failed  = 11.
+***
+***      CASE sy-subrc.
+***        WHEN 0.
+****         message id 'ZI' type 'I' number '015' with text-m11.
+***        WHEN 1.
+***          MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m12.
+***          EXIT.
+***        WHEN 2.
+***          MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m13.
+***          EXIT.
+***        WHEN 3.
+***          MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m14.
+***          EXIT.
+***        WHEN OTHERS.
+***          MESSAGE ID 'ZI' TYPE 'E' NUMBER '015' WITH text-m15.
+***          EXIT.
+***      ENDCASE.
+***    ENDIF.
+***
+****........download PDF file
+***    file_name = p_datei.
+***
+***    CALL FUNCTION 'GUI_DOWNLOAD'
+***      EXPORTING
+****       BIN_FILESIZE            =
+***        filename                = file_name
+***        filetype                = file_type
+****       APPEND                  = ' '
+****       WRITE_FIELD_SEPARATOR   = ' '
+****       HEADER                  = '00'
+****       TRUNC_TRAILING_BLANKS   = ' '
+****       WRITE_LF                = 'X'
+****       COL_SELECT              = ' '
+****       COL_SELECT_MASK         = ' '
+****       DAT_MODE                = ' '
+****       CONFIRM_OVERWRITE       = ' '
+****       NO_AUTH_CHECK           = ' '
+****       CODEPAGE                = ' '
+****       IGNORE_CERR             = ABAP_TRUE
+****       REPLACEMENT             = '#'
+****       WRITE_BOM               = ' '
+****       TRUNC_TRAILING_BLANKS_EOL       = 'X'
+****       WK1_N_FORMAT            = ' '
+****       WK1_N_SIZE              = ' '
+****       WK1_T_FORMAT            = ' '
+****       WK1_T_SIZE              = ' '
+****       WRITE_EOL               = ABAP_TRUE
+****     IMPORTING
+****       FILELENGTH              =
+***      TABLES
+***        data_tab                = pdf
+****       FIELDNAMES              =
+***      EXCEPTIONS
+***        file_write_error        = 1
+***        no_batch                = 2
+***        gui_refuse_filetransfer = 3
+***        invalid_type            = 4
+***        no_authority            = 5
+***        unknown_error           = 6
+***        header_not_allowed      = 7
+***        separator_not_allowed   = 8
+***        filesize_not_allowed    = 9
+***        header_too_long         = 10
+***        dp_error_create         = 11
+***        dp_error_send           = 12
+***        dp_error_write          = 13
+***        unknown_dp_error        = 14
+***        access_denied           = 15
+***        dp_out_of_memory        = 16
+***        disk_full               = 17
+***        dp_timeout              = 18
+***        file_not_found          = 19
+***        dataprovider_exception  = 20
+***        control_flush_error     = 21
+***        OTHERS                  = 22.
+***
+****   write: / numbytes, 'Bytes heruntergeladen in Datei'(009),
+****            (100) zz_filename.
+****   uline.
+******************************
+***    EXIT.
+******************************
+***  ENDLOOP.
+***ENDFORM.                               "FILE_TRANSFER
+***
+****&-------------------------------------------------------------------*
+****&      Form  create_spool
+****&-------------------------------------------------------------------*
+****       text
+****--------------------------------------------------------------------*
+****  -->  p1        text
+****  <--  p2        text
+****--------------------------------------------------------------------*
+***FORM create_spool.
+***  PERFORM form_open.
+***
+***  PERFORM select_iflotx USING s_tplnr-low.
+***
+**** perform select_single_mpla using zz_tit_warpl.
+***
+**** perform select_single_plko using 'A' zz_tit_plnnr zz_tit_plnal.
+***
+***  PERFORM select_single_plpo USING 'A' zz_tit_plnnr zz_tit_plnal.
+***
+***  CLEAR zztx.
+***  zztx-tptxt = text-tpl.
+***  zztx-strno = s_tplnr-low.
+***  zztx-pltxt = iflotx-pltxt.
+***  zztx-wpltx = text-wpt.
+***  WRITE zz_tit_warpl TO zztx-warpl NO-ZERO.
+***  WRITE zz_tit_wptxt TO zztx-wptxt NO-ZERO.
+**** zztx-wptxt = mpla-wptxt.
+***  zztx-txpln = text-pln.
+***  WRITE zz_tit_plnnr TO zztx-plnnr NO-ZERO.
+***  zztx-ltxa1 = plpo-ltxa1.
+***  zztx-txnal = text-nal.
+***  zztx-plnal = zz_tit_plnal.
+**** zztx-pltbz = text-plt.
+***  zztx-mtnum = text-mat.
+***  zztx-maktx = text-mtx.
+***  zztx-meins = text-mei.
+***  WRITE text-men TO zztx-menge RIGHT-JUSTIFIED.
+****  zztx-eqnum = text-eqn.
+***  zztx-msgrp = text-msg.    ""EICR-1023462
+**** zztx-eqktx = text-eqt.
+***  zztx-bmerk = text-bmk.
+***  WRITE text-lea TO zztx-leram RIGHT-JUSTIFIED.
+***
+****........Langtext aufbereiten ........................................
+***  CLEAR zz_text_lines. REFRESH zz_text_lines.
+***  CLEAR ta_text_lines. REFRESH ta_text_lines.
+***
+***  wa_object = sy-mandt.
+***  wa_object-plnty = plpo-plnty.
+***  wa_object-plnnr = plpo-plnnr.
+***  wa_object-plnkn = plpo-plnkn.
+***  wa_object-zaehl = '00000001'.
+***  MOVE wa_object TO zz_object.
+***
+***  CALL FUNCTION 'READ_TEXT'
+***    EXPORTING
+***      client                  = sy-mandt
+***      id                      = 'PLPO'
+***      language                = sy-langu
+***      name                    = zz_object
+***      object                  = 'ROUTING'
+***      archive_handle          = 0
+***      local_cat               = ' '
+****   IMPORTING
+****     HEADER                  =
+***    TABLES
+***      lines                   = zz_text_lines
+***    EXCEPTIONS
+***      id                      = 1
+***      language                = 2
+***      name                    = 3
+***      not_found               = 4
+***      object                  = 5
+***      reference_check         = 6
+***      wrong_access_to_archive = 7
+***      OTHERS                  = 8.
+***
+***  IF sy-subrc IS INITIAL.
+***    CLEAR tanew_lines. REFRESH tanew_lines.
+***
+***    LOOP AT zz_text_lines.
+***      IF NOT zz_text_lines-tdformat IS INITIAL.
+***        PERFORM convert_text.
+***      ENDIF.
+***
+***      PERFORM aufbereiten_text.
+***    ENDLOOP.
+***
+***    PERFORM convert_text.
+***  ENDIF.
+***
+***  PERFORM anzhl_seiten_berechnen.
+***
+***  zz_element = 'TITLE'.
+***  zz_window  = 'TITLE'.
+***  PERFORM write_form.
+***
+****........Detail-Daten Teil_01 MAIN Haupt-Fenster .....................
+***  CLEAR zz_ltext.
+***
+***  DESCRIBE TABLE ta_text_lines LINES zzlin.
+***  IF zzlin > 0.
+***    CLEAR zz_ltext.
+***    zz_element = 'LANGTEXT'.
+***    zz_window  = 'MAIN'.
+***
+***    LOOP AT ta_text_lines.
+***      MOVE ta_text_lines-tdline TO zz_ltext-tdline.
+***      PERFORM write_form.
+***    ENDLOOP.
+***
+***    zz_element = 'UNDERLINE'.
+***    zz_window  = 'MAIN'.
+***    PERFORM write_form.
+***
+***  ENDIF.
+***
+****........Detail-Daten Teil_01 MAIN Haupt-Fenster .....................
+***  LOOP AT ta_list.
+***    CLEAR zzwf.
+***    WRITE ta_list-zztecho TO zzwf-strno.
+***    MOVE  ta_list-ktx01   TO zzwf-pltxt.
+***    WRITE ta_list-matnr   TO zzwf-mtnum NO-ZERO.
+***    MOVE  ta_list-maktx   TO zzwf-maktx.
+***    MOVE  ta_list-meins   TO zzwf-meins.
+***    WRITE ta_list-menge   TO zzwf-menge NO-ZERO.
+****    WRITE ta_list-equnr   TO zzwf-eqnum NO-ZERO.
+***
+********Begin of EICR 1023462
+***    MOVE zzwf-strno TO lv_tplnr.
+***
+***CALL FUNCTION 'CONVERSION_EXIT_TPLNR_INPUT'
+***  EXPORTING
+***    input                      = lv_tplnr
+***   I_FLG_CHECK_INTERNAL       = 'X'
+*** IMPORTING
+***   OUTPUT                     = lv_tplnr
+**** EXCEPTIONS
+****   NOT_FOUND                  = 1
+****   OTHERS                     = 2
+***          .
+***IF sy-subrc <> 0.
+**** Implement suitable error handling here
+***ENDIF.
+***
+***    SELECT SINGLE msgrp INTO zzwf-msgrp FROM iloa
+***                        WHERE tplnr = lv_tplnr.
+******End of EICR- 1023462
+***
+***    IF ta_list-equnr IS NOT INITIAL.
+***      MOVE  ta_list-zzeqktx TO zzwf-eqktx.
+***    ENDIF.
+***
+***    zz_element = 'ZEILE_01'.
+***    zz_window  = 'MAIN'.
+***    PERFORM write_form.
+***
+***  ENDLOOP.
+***
+****........Schlusszeilen ausgeben
+***  CLEAR zzsz.
+***  zz_element = 'PROTECT'.
+***  zz_window  = 'MAIN'.
+***  PERFORM write_form.
+***
+***  zzsz-text1 = text-sz1.
+***  zz_element = 'SCHLUSS_ZEILE_1'.
+***  zz_window  = 'MAIN'.
+***  PERFORM write_form.
+***
+***  zzsz-text1 = text-sz2.
+***  zz_element = 'SCHLUSS_ZEILE_2'.
+***  zz_window  = 'MAIN'.
+***  PERFORM write_form.
+***
+***  zzsz-text1 = text-sz3.
+***  zzsz-text2 = text-szd.
+***  zzsz-text3 = text-szv.
+***  zz_element = 'SCHLUSS_ZEILE_3'.
+***  zz_window  = 'MAIN'.
+***  PERFORM write_form.
+***  zz_element = 'ENDPROTECT'.
+***  zz_window  = 'MAIN'.
+***  PERFORM write_form.
+***
+****........Liste Rekapitulation.........................................
+***  zz_element = 'NEW_PAGE'.
+***  zz_window  = 'MAIN'.
+***  PERFORM write_form.
+***
+***  zz_txt_rekap = text-rek.  " Rekapitulation
+***  WRITE text-rek TO zz_txt_rekap CENTERED.
+***  zz_title = sy-title.
+***  zz_element = 'TITLE_REKAP'.
+***  zz_window  = 'TITREKAP'.
+***  PERFORM write_form.
+***
+***  LOOP AT ta_rekap.
+***    CLEAR zzwf.
+***    WRITE ta_rekap-matnr   TO zzwf-mtnum NO-ZERO.
+***    MOVE  ta_rekap-maktx   TO zzwf-maktx.
+***    MOVE  ta_rekap-meins   TO zzwf-meins.
+***    WRITE ta_rekap-menge   TO zzwf-menge NO-ZERO.
+***
+***    zz_element = 'ZEILE_REKAP'.
+***    zz_window  = 'MAIN'.
+***    PERFORM write_form.
+***  ENDLOOP.
+***
+****........'Ende des Berichts'..........................................
+***  zz_element = 'END_OF_REPORT'.
+***  zz_window  = 'MAIN'.
+***  PERFORM write_form.
+***
+****........Formular schliessen..........................................
+***  PERFORM form_close.
+***ENDFORM.                    " create_spool
+***
+****--------------------------------------------------------------------*
+****   FORM PDF_ANBINDEN_ARB_PLAN                                       *
+****--------------------------------------------------------------------*
+****        Anlegen PDF-Verknüpfung an Anleitung Plankopf               *
+****--------------------------------------------------------------------*
+***FORM pdf_anbinden_arb_plan.
+***  CLEAR rspar. REFRESH rspar.
+****........Objekttyp....................................................
+***  rspar-selname = 'P_BOTYPE'.
+***  rspar-kind    = 'S'.
+***  rspar-sign    = 'I'.
+***  rspar-option  = 'EQ'.
+***  rspar-low     = 'BUS1020'.
+***  APPEND rspar.
+***
+****........Objekttyp....................................................
+****  CLEAR sel_object.
+****  sel_object-plnty = 'A'.
+****  sel_object-plnnr = zz_tit_plnnr.
+****  sel_object-plnal = zz_tit_plnal.
+***  CLEAR rspar.
+***  rspar-selname = 'P_OBJKEY'.
+***  rspar-kind    = 'S'.
+***  rspar-sign    = 'I'.
+***  rspar-option  = 'EQ'.
+***  rspar-low     = zz_tit_warpl.
+***  APPEND rspar.
+***
+****........PDF..........................................................
+***  CLEAR rspar.
+***  rspar-selname = 'P_MSGTYP'.
+***  rspar-kind    = 'S'.
+***  rspar-sign    = 'I'.
+***  rspar-option  = 'EQ'.
+***  rspar-low     = 'PDF'.
+***  APPEND rspar.
+***
+****........MESSAGE......................................................
+***  rspar-selname = 'P_DOCTY'.
+***  rspar-kind    = 'S'.
+***  rspar-sign    = 'I'.
+***  rspar-option  = 'EQ'.
+***  rspar-low     = 'MESSAGE'.
+***  APPEND rspar.
+***
+****........Pfad (Locale Datei)..........................................
+***  CLEAR rspar.
+***  rspar-selname = 'P_PATH'.
+***  rspar-kind    = 'S'.
+***  rspar-sign    = 'I'.
+***  rspar-option  = 'EQ'.
+***  rspar-low     = p_datei.
+***  APPEND rspar.
+***
+****........Name der Datei...............................................
+***  CLEAR rspar.
+***  rspar-selname = 'P_NAME'.
+***  rspar-kind    = 'S'.
+***  rspar-sign    = 'I'.
+***  rspar-option  = 'EQ'.
+***  rspar-low     = sy-title.
+***  APPEND rspar.
+***
+****........binärer Verknüpfungstyp......................................
+***  CLEAR rspar.
+***  rspar-selname = 'P_RELTYP'.
+***  rspar-kind    = 'S'.
+***  rspar-sign    = 'I'.
+***  rspar-option  = 'EQ'.
+***  rspar-low     = 'ATTA'.
+***  APPEND rspar.
+***
+***  SUBMIT zpdfexpd WITH SELECTION-TABLE rspar
+***                  AND RETURN.
+***
+***ENDFORM.                    " pdf_anbinden_arb_plan
+***
+****--------------------------------------------------------------------*
+****   FORM FORM_OPEN                                                   *
+****--------------------------------------------------------------------*
+****        Formulardruck öffnen                                        *
+****--------------------------------------------------------------------*
+***FORM form_open.
+****........Z_OPEN = 1 / Open bereits durchgeführt.........................
+***  IF zz_open = 1.
+***    EXIT.
+***  ENDIF.
+***
+***  itcpo-tdnewid    = 'X'.
+***  itcpo-tdcopies   = 1.
+***  itcpo-tdimmed    = ' '.
+***  itcpo-tddelete   = 'X'.
+***  itcpo-tdprogram  = sy-repid.
+***  itcpo-tdcovtitle = sy-title.
+***  itcpo-tdreceiver = 'PM_DOC'.
+***
+***  CALL FUNCTION 'OPEN_FORM'
+***    EXPORTING
+***      device                      = 'PRINTER'
+***      dialog                      = ' '
+***      form                        = zz_formular
+***      language                    = sy-langu
+***      options                     = itcpo
+***    IMPORTING
+***      result                      = ta_itcpp
+***    EXCEPTIONS
+***      canceled                    = 1
+***      device                      = 2
+***      form                        = 3
+***      options                     = 4
+***      unclosed                    = 5
+***      mail_options                = 6
+***      archive_error               = 7
+***      invalid_fax_number          = 8
+***      more_params_needed_in_batch = 9
+***      spool_error                 = 10
+***      OTHERS                      = 11.
+***
+***  IF sy-subrc = 0.
+***    zz_open = 1.
+***  ENDIF.
+***ENDFORM.                               " FORM_OPEN
+***
+****--------------------------------------------------------------------*
+****   FORM FORM_CLOSE                                                  *
+****--------------------------------------------------------------------*
+****        Formulardruck schliessen                                    *
+****--------------------------------------------------------------------*
+***FORM form_close.
+***  IF zz_open = 0.
+***    EXIT.
+***  ENDIF.
+***
+**** perform form_end.
+***
+***  CALL FUNCTION 'CLOSE_FORM'
+***    EXCEPTIONS
+***      OTHERS = 1.
+***  zz_open = 0.
+***ENDFORM.                               "FORM_CLOSE
+***
+****--------------------------------------------------------------------*
+****   FORM WRITE_FORM                                                  *
+****--------------------------------------------------------------------*
+****        ....................                                        *
+****--------------------------------------------------------------------*
+***FORM write_form.
+***  CALL FUNCTION 'WRITE_FORM'
+***    EXPORTING
+***      element = zz_element
+***      window  = zz_window
+***    EXCEPTIONS
+***      element = 1
+***      window  = 2
+***      OTHERS  = 3.
+***ENDFORM.                               " write_form
+***
+****--------------------------------------------------------------------*
+****   FORM AUFBEREITEN_TEXT                                            *
+****--------------------------------------------------------------------*
+****        ....................                                        *
+****--------------------------------------------------------------------*
+***FORM aufbereiten_text.
+***  IF NOT zz_text_lines-tdformat IS INITIAL.
+***    MOVE zz_text_lines-tdformat TO wa_tdformat.
+***  ENDIF.
+***
+***  MOVE zz_text_lines-tdline TO tanew_lines-tdline.
+***  APPEND tanew_lines.
+***ENDFORM.              " aufbereiten_text
+***
+****--------------------------------------------------------------------*
+****   FORM CONVERT_TEXT                                                *
+****--------------------------------------------------------------------*
+****        ....................                                        *
+****--------------------------------------------------------------------*
+***FORM convert_text.
+***  DESCRIBE TABLE tanew_lines LINES zzlin.
+***
+***  IF zzlin > 0.
+***    CLEAR zz_ltext.
+***
+***    CALL FUNCTION 'CONVERT_ITF_TO_STREAM_TEXT'
+***      EXPORTING
+***        language    = sy-langu
+***      TABLES
+***        itf_text    = tanew_lines
+***        text_stream = ta_text_stream.
+***
+***    DESCRIBE TABLE ta_text_stream LINES zzlin.
+***    IF zzlin > 0.
+***      LOOP AT ta_text_stream.
+***        MOVE wa_tdformat           TO ta_text_lines-tdformat.
+***        MOVE ta_text_stream-tdline TO ta_text_lines-tdline.
+***        APPEND ta_text_lines.
+***      ENDLOOP.
+***    ENDIF.
+***  ENDIF.
+***
+***  CLEAR wa_tdformat.
+***  CLEAR tanew_lines. REFRESH tanew_lines.
+***ENDFORM.              " convert_text
+***
+***INCLUDE z0v00001.
+***
+****$*$---------------------------------------------------------------$*$*
+****$*$                    End of Report ZMVI0059                     $*$*
+****$*$---------------------------------------------------------------$*$*
+****&---------------------------------------------------------------------*
+****&      Form  SELECT_CLASS_DATA
+****&---------------------------------------------------------------------*
+****       text
+****----------------------------------------------------------------------*
+****  -->  p1        text
+****  <--  p2        text
+****----------------------------------------------------------------------*
+***FORM select_class_data USING zz_tplnr.
+***
+***  CLEAR   ttpklass. CLEAR   ttpkldat.
+***  CLEAR   ttpchar.
+***  REFRESH ttpklass. REFRESH ttpkldat.
+***  REFRESH ttpchar.
+***  CLEAR: z_objnr .
+***  CLEAR: gv_objty.
+***  z_objnr = zz_tplnr.
+***
+***  CALL FUNCTION 'CLAF_CLASSIFICATION_OF_OBJECTS'
+***    EXPORTING
+***      class                = 'TEEXC'
+***      classtext            = 'X'
+***      classtype            = '003'
+***      features             = 'X'
+***      object               = z_objnr
+***      key_date             = sy-datum
+***      initial_charact      = ' '
+***      change_service_clf   = 'X'
+***    TABLES
+***      t_class              = ttpklass
+***      t_objectdata         = ttpkldat
+***      i_sel_characteristic = ttpchar
+***    EXCEPTIONS
+***      no_classification    = 1
+***      no_classtypes        = 2
+***      invalid_class_type   = 3
+***      OTHERS               = 4.
+***
+***  IF sy-subrc <> 0.
+****   MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+****           WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+***  ENDIF.
+***
+***  READ TABLE ttpkldat WITH KEY atnam = ttpkldat-atnam.
+****  gv_subrc = sy-subrc.
+***
+***  IF sy-subrc = 0.
+****  IF sy-subrc NE 0.
+****    EXIT.
+****  ENDIF.
+***
+****    gv_objty = ttpkldat-ausp1.
+***    READ TABLE ta_cawnt WITH KEY atwtb = ttpkldat-ausp1.
+***    IF sy-subrc = 0.
+***
+***      gv_objty = ta_cawnt-objty.
+***
+***    ENDIF.
+***  ENDIF.
+***
+***ENDFORM.                    " SELECT_CLASS_DATA
+****&---------------------------------------------------------------------*
+****&      Form  FETCH_CLASS_FLOC
+****&---------------------------------------------------------------------*
+****       text
+****----------------------------------------------------------------------*
+****  -->  p1        text
+****  <--  p2        text
+****----------------------------------------------------------------------*
+***FORM fetch_class_floc .
+***
+***  IF s_class-low IS NOT INITIAL.
+***
+***    CLEAR lv_clint.
+***    SELECT SINGLE clint
+***       FROM   klah
+***       INTO   lv_clint
+***       WHERE  class IN s_class "co_class
+***       AND    klart EQ co_klart.
+***
+***    SELECT objek
+***       FROM   kssk
+***       INTO   CORRESPONDING FIELDS OF TABLE tt_kssk
+***       WHERE  mafid EQ co_mafid
+***       AND    klart EQ co_klart
+***       AND    clint EQ lv_clint.
+***
+***    IF sy-subrc <> 0.
+***      MESSAGE e015(zi) WITH text-m01.
+***    ENDIF.
+***
+***    CLEAR   tt_inob.
+***    REFRESH tt_inob.
+***
+***    LOOP AT tt_kssk INTO ls_kssk.
+***      SELECT objek
+***             FROM  inob
+***             APPENDING CORRESPONDING FIELDS OF TABLE tt_inob
+***             WHERE cuobj EQ ls_kssk-objek
+***             AND   klart EQ co_klart
+***             AND   obtab EQ co_tabnm_iflot.
+***
+***      IF sy-subrc <> 0.
+****      message e015(ZI) with text-m01.
+***      ENDIF.
+***    ENDLOOP.
+***
+***    SORT tt_inob BY objek.
+***    DELETE ADJACENT DUPLICATES FROM tt_inob COMPARING objek.
+***
+***  ENDIF.
+***
+***ENDFORM.                    " FETCH_CLASS_FLOC
+***
+****&---------------------------------------------------------------------*
+****&      Form  SELECTION_SCREEN
+****&---------------------------------------------------------------------*
+****       text
+****----------------------------------------------------------------------*
+****  -->  p1        text
+****  <--  p2        text
+****----------------------------------------------------------------------*
+***FORM selection_screen .
+***
+***  LEAVE TO SCREEN 0.
+***
+***ENDFORM.                    " SELECTION_SCREEN
