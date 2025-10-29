@@ -15,7 +15,7 @@ REPORT ztr_a2r_elastomer_change.
 * text-006 = 'Mode Selection'
 
 *---------------------------------------------------------------------*
-* Selection screen
+* Selection Screen
 *---------------------------------------------------------------------*
 
 "-------------------------------------------------------------*
@@ -39,11 +39,11 @@ SELECT-OPTIONS:
 SELECTION-SCREEN END OF BLOCK b2.
 
 "-------------------------------------------------------------*
-" Material text filter
+" Material text filter (single input only)
 "-------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-003.
-SELECT-OPTIONS:
-  s_matfilt FOR makt-maktx.                         "Material text filter
+PARAMETERS:
+  p_matfilt TYPE makt-maktx.                         "Material text filter
 SELECTION-SCREEN END OF BLOCK b3.
 
 "-------------------------------------------------------------*
@@ -81,6 +81,7 @@ AT SELECTION-SCREEN.
 * Start-of-selection – sample output
 *---------------------------------------------------------------------*
 START-OF-SELECTION.
+
   WRITE: / 'Maintenance Plant:', p_plant,
          / 'Functional Location:', p_floc,
          / 'Class:', p_class,
@@ -91,42 +92,30 @@ START-OF-SELECTION.
            'To:', ls_charval-high.
   ENDLOOP.
 
+  IF p_matfilt IS NOT INITIAL.
+    WRITE: / 'Material Filter:', p_matfilt.
+  ENDIF.
+
 *---------------------------------------------------------------------*
 * Form routines
 *---------------------------------------------------------------------*
 FORM f_validate_ranges.
   "check all ranges for correct order
-  DATA: lv_error TYPE abap_bool VALUE abap_false.
-
   LOOP AT s_chaval INTO DATA(ls_char).
     IF ls_char-high IS NOT INITIAL AND ls_char-low > ls_char-high.
       MESSAGE 'Lower limit > upper limit for Characteristic Value' TYPE 'E'.
-      lv_error = abap_true.
-    ENDIF.
-  ENDLOOP.
-
-  LOOP AT s_matfilt INTO DATA(ls_mat).
-    IF ls_mat-high IS NOT INITIAL AND ls_mat-low > ls_mat-high.
-      MESSAGE 'Lower limit > upper limit for Material Filter' TYPE 'E'.
-      lv_error = abap_true.
     ENDIF.
   ENDLOOP.
 
   LOOP AT s_mp INTO DATA(ls_mp).
     IF ls_mp-high IS NOT INITIAL AND ls_mp-low > ls_mp-high.
       MESSAGE 'Lower limit > upper limit for Maintenance Plan' TYPE 'E'.
-      lv_error = abap_true.
     ENDIF.
   ENDLOOP.
 
   LOOP AT s_flstat INTO DATA(ls_fl).
     IF ls_fl-high IS NOT INITIAL AND ls_fl-low > ls_fl-high.
       MESSAGE 'Lower limit > upper limit for FL Status' TYPE 'E'.
-      lv_error = abap_true.
     ENDIF.
   ENDLOOP.
-
-  IF lv_error = abap_true.
-    STOP.
-  ENDIF.
 ENDFORM.
