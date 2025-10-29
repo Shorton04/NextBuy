@@ -1,8 +1,8 @@
 *---------------------------------------------------------------------*
-* Report: ZPM_ELASTOMER_UPDATE
+* Report: ZTR_A2R_ELASTOMER_CHANGE
 * Title : Checklist for Periodic Maintenance Tasks
 *---------------------------------------------------------------------*
-REPORT zpm_elastomer_update.
+REPORT ztr_a2r_elastomer_change.
 
 *---------------------------------------------------------------------*
 * Text Elements
@@ -11,93 +11,122 @@ REPORT zpm_elastomer_update.
 * text-002 = 'Selection for Class Characteristic Value'
 * text-003 = 'Filter on Material Text'
 * text-004 = 'Maint. Plan Selection'
-* text-005 = 'Admin Data / Status Info'
+* text-005 = 'Admin. Data / Status Info'
 * text-006 = 'Mode Selection'
 
 *---------------------------------------------------------------------*
-* SELECTION SCREEN
+* Selection screen
 *---------------------------------------------------------------------*
 
+"-------------------------------------------------------------*
+" Functional Location Section
+"-------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
 PARAMETERS:
-  p_plant TYPE iflo-swerk OBLIGATORY,               " Maintenance Plant
-  p_floc  TYPE iflot-tplnr OBLIGATORY,              " Functional Location
-  p_class TYPE klah-class DEFAULT 'TEEXC'.          " Class
+  p_plant TYPE werks_d OBLIGATORY,         "Maintenance Plant
+  p_floc  TYPE iflot-tplnr OBLIGATORY,     "Functional Location
+  p_class TYPE klah-class DEFAULT 'TEEXC'. "Class
 SELECTION-SCREEN END OF BLOCK b1.
 
+"-------------------------------------------------------------*
+" Class characteristic section
+"-------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
 PARAMETERS:
-  p_char   TYPE cabn-atnam DEFAULT 'ELASTOMER_TYPE', " Characteristic Name
-  p_chaval TYPE c LENGTH 40.                         " Characteristic Value
+  p_char TYPE cabn-atnam DEFAULT 'ELASTOMER_TYPE'. "Characteristic
+SELECT-OPTIONS:
+  s_chaval FOR ausp-atwrt.                          "Characteristic value (range)
 SELECTION-SCREEN END OF BLOCK b2.
 
+"-------------------------------------------------------------*
+" Material text filter
+"-------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-003.
-PARAMETERS:
-  p_matfilt TYPE makt-maktx.                         " Material Description Filter
+SELECT-OPTIONS:
+  s_matfilt FOR makt-maktx.                         "Material text filter
 SELECTION-SCREEN END OF BLOCK b3.
 
+"-------------------------------------------------------------*
+" Maintenance plan selection
+"-------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE text-004.
-PARAMETERS:
-  p_mp TYPE c LENGTH 12.                             " Maintenance Plan
+SELECT-OPTIONS:
+  s_mp FOR mpla-warpl.                              "Maintenance plan
 SELECTION-SCREEN END OF BLOCK b4.
 
+"-------------------------------------------------------------*
+" Functional location status
+"-------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b5 WITH FRAME TITLE text-005.
-PARAMETERS:
-  p_flstat TYPE c LENGTH 10 DEFAULT 'DLFL'.          " Functional Location Status
+SELECT-OPTIONS:
+  s_flstat FOR tj02t-istat DEFAULT 'DLFL'.          "Functional location status
 SELECTION-SCREEN END OF BLOCK b5.
 
+"-------------------------------------------------------------*
+" Mode selection
+"-------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b6 WITH FRAME TITLE text-006.
 PARAMETERS:
-  p_test RADIOBUTTON GROUP rad1 DEFAULT 'X' USER-COMMAND rad, " Test Mode
-  p_eff  RADIOBUTTON GROUP rad1.                              " Effective Mode
+  p_test RADIOBUTTON GROUP rad1 DEFAULT 'X',        "Test mode
+  p_eff  RADIOBUTTON GROUP rad1.                    "Effective mode
 SELECTION-SCREEN END OF BLOCK b6.
 
 *---------------------------------------------------------------------*
-* AT SELECTION-SCREEN VALIDATION
+* Validation – avoid “lower > upper” popup
 *---------------------------------------------------------------------*
 AT SELECTION-SCREEN.
-
-  " Ensure characteristic value entered
-  IF p_chaval IS INITIAL.
-    MESSAGE 'Please enter at least one characteristic value.' TYPE 'E'.
-  ENDIF.
+  PERFORM f_validate_ranges.
 
 *---------------------------------------------------------------------*
-* START-OF-SELECTION
+* Start-of-selection – sample output
 *---------------------------------------------------------------------*
 START-OF-SELECTION.
+  WRITE: / 'Maintenance Plant:', p_plant,
+         / 'Functional Location:', p_floc,
+         / 'Class:', p_class,
+         / 'Characteristic:', p_char.
 
-  WRITE: / '-----------------------------------------------',
-         / 'Selection Summary',
-         / '-----------------------------------------------'.
-
-  WRITE: / 'Maintenance Plant: ', p_plant,
-         / 'Functional Location: ', p_floc,
-         / 'Class: ', p_class,
-         / 'Characteristic: ', p_char,
-         / 'Characteristic Value: ', p_chaval.
-
-  IF p_matfilt IS NOT INITIAL.
-    WRITE: / 'Material Filter: ', p_matfilt.
-  ENDIF.
-
-  IF p_mp IS NOT INITIAL.
-    WRITE: / 'Maintenance Plan: ', p_mp.
-  ENDIF.
-
-  IF p_flstat IS NOT INITIAL.
-    WRITE: / 'Functional Location Status: ', p_flstat.
-  ENDIF.
-
-  IF p_test = 'X'.
-    WRITE: / 'Mode: TEST (No update will be done)'.
-  ELSEIF p_eff = 'X'.
-    WRITE: / 'Mode: EFFECTIVE (Actual updates will be performed)'.
-  ENDIF.
-
-  WRITE: / '-----------------------------------------------'.
-  WRITE: / 'Program ready for next development phase (data fetch and update logic).'.
+  LOOP AT s_chaval INTO DATA(ls_charval).
+    WRITE: / 'Characteristic Value From:', ls_charval-low,
+           'To:', ls_charval-high.
+  ENDLOOP.
 
 *---------------------------------------------------------------------*
-* END OF PROGRAM
+* Form routines
 *---------------------------------------------------------------------*
+FORM f_validate_ranges.
+  "check all ranges for correct order
+  DATA: lv_error TYPE abap_bool VALUE abap_false.
+
+  LOOP AT s_chaval INTO DATA(ls_char).
+    IF ls_char-high IS NOT INITIAL AND ls_char-low > ls_char-high.
+      MESSAGE 'Lower limit > upper limit for Characteristic Value' TYPE 'E'.
+      lv_error = abap_true.
+    ENDIF.
+  ENDLOOP.
+
+  LOOP AT s_matfilt INTO DATA(ls_mat).
+    IF ls_mat-high IS NOT INITIAL AND ls_mat-low > ls_mat-high.
+      MESSAGE 'Lower limit > upper limit for Material Filter' TYPE 'E'.
+      lv_error = abap_true.
+    ENDIF.
+  ENDLOOP.
+
+  LOOP AT s_mp INTO DATA(ls_mp).
+    IF ls_mp-high IS NOT INITIAL AND ls_mp-low > ls_mp-high.
+      MESSAGE 'Lower limit > upper limit for Maintenance Plan' TYPE 'E'.
+      lv_error = abap_true.
+    ENDIF.
+  ENDLOOP.
+
+  LOOP AT s_flstat INTO DATA(ls_fl).
+    IF ls_fl-high IS NOT INITIAL AND ls_fl-low > ls_fl-high.
+      MESSAGE 'Lower limit > upper limit for FL Status' TYPE 'E'.
+      lv_error = abap_true.
+    ENDIF.
+  ENDLOOP.
+
+  IF lv_error = abap_true.
+    STOP.
+  ENDIF.
+ENDFORM.
