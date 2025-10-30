@@ -1,151 +1,263 @@
-*---------------------------------------------------------------------*
-* F01 Include: FORM Routines
-*---------------------------------------------------------------------*
+CLASS zcl_mes_if_inbound DEFINITION
+  PUBLIC
+  CREATE PUBLIC .
 
-*---------------------------------------------------------------------*
-* INIT_DATA
-*---------------------------------------------------------------------*
-FORM init_data.
-  DATA: lt_mtart TYPE STANDARD TABLE OF mara-mtart,
-        lv_datum TYPE datum.
+  PUBLIC SECTION.
+    METHODS:
+      handle_inbound
+        IMPORTING
+          i_payload TYPE string
+        RETURNING
+          VALUE(e_result) TYPE char10.
 
-  CLEAR: r_mtart[], r_mtart.
-  SELECT SINGLE * FROM ztxca_param INTO @DATA(ls_param)
-    WHERE kdef01 = 'ZKROHRECOG_MATTYPE_SELECTION'
-      AND kval03 = 'MTART'
-      AND pval01 = 'X'.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ty_in,
+             processorder TYPE aufnr,
+             operation    TYPE vornr,
+             mesorderid   TYPE string,
+             status       TYPE string,
+             timestamp    TYPE timestamp,
+             messageid    TYPE string,
+           END OF ty_in.
 
-  IF sy-subrc = 0.
-    IF NOT ls_param-pval02 IS INITIAL.
-      SPLIT ls_param-pval02 AT ',' INTO TABLE lt_mtart.
-      LOOP AT lt_mtart INTO DATA(ls_mtart) WHERE table_line IS NOT INITIAL.
-        r_mtart-sign = 'I'.
-        r_mtart-option = 'EQ'.
-        r_mtart-low = ls_mtart.
-        APPEND r_mtart.
-      ENDLOOP.
+    METHODS:
+      parse_payload
+        IMPORTING  i_payload TYPE string
+        EXPORTING  es_in TYPE ty_in
+        RAISING    cx_root.
+
+    METHODS:
+      check_idempotency
+        IMPORTING is_in TYPE ty_in
+        RETURNING VALUE(rv_duplicate) TYPE abap_bool.
+
+    METHODS:
+      log_message
+        IMPORTING is_in TYPE ty_in i_payload TYPE string iv_flag TYPE char1 iv_err TYPE string.
+
+    METHODS:
+      update_mapping_table
+        IMPORTING is_in TYPE ty_in.
+
+    METHODS:
+      aggregate_and_update_status
+        IMPORTING is_in TYPE ty_in
+        RETURNING VALUE(rv_ok) TYPE abap_bool.
+
+    METHODS:
+      conf_operation_by_bapi
+        IMPORTING is_in TYPE ty_in
+        RETURNING VALUE(rv_ok) TYPE abap_bool.
+
+ENDCLASS.
+
+
+CLASS zcl_mes_if_inbound IMPLEMENTATION.
+
+  METHOD handle_inbound.
+    DATA(ls_in) = VALUE ty_in( ).
+    e_result = 'ERROR'.
+
+    TRY.
+        parse_payload( i_payload = i_payload
+                       es_in     = ls_in ).
+
+        " write raw message to log as NEW initially
+        log_message( is_in = ls_in i_payload = i_payload iv_flag = 'N' iv_err = '' ).
+
+        " idempotency check
+        IF check_idempotency( ls_in ) = abap_true.
+          " duplicate -> mark as processed and return OK
+          log_message( is_in = ls_in i_payload = i_payload iv_flag = 'P' iv_err = 'DUPLICATE' ).
+          e_result = 'DUPLICATE'.
+          RETURN.
+        ENDIF.
+
+        " Try to update mapping table
+        update_mapping_table( is_in = ls_in ).
+
+        " Aggregate and update operation status
+        IF aggregate_and_update_status( is_in = ls_in ) = abap_true.
+          log_message( is_in = ls_in i_payload = i_payload iv_flag = 'P' iv_err = '' ).
+          e_result = 'OK'.
+        ELSE.
+          " failed to update SAP statuses - log as error
+          log_message( is_in = ls_in i_payload = i_payload iv_flag = 'E' iv_err = 'UPDATE_FAILED' ).
+          e_result = 'ERROR'.
+        ENDIF.
+
+      CATCH cx_root INTO DATA(lx).
+        " generic error handling
+        log_message( is_in = ls_in i_payload = i_payload iv_flag = 'E' iv_err = lx->get_text( ) ).
+        e_result = 'ERROR'.
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD parse_payload.
+    " Expect JSON structure, use /UI2/CL_JSON for deserialization
+    TRY.
+        DATA(lo_json) = NEW /ui2/cl_json( ).
+        " Using deserialize to an internal table/structure is more robust.
+        DATA(lv_json) = i_payload.
+        " Map JSON fields manually
+        DATA(lt_map) = VALUE string_table( ).
+        " quick deserial to generic data object - create field mapping
+        DATA(ls_struct) = VALUE ty_in( ).
+        /ui2/cl_json=>deserialize( EXPORTING json = lv_json CHANGING data = ls_struct ).
+        es_in = ls_struct.
+      CATCH cx_root INTO DATA(lx).
+        RAISE EXCEPTION TYPE cx_root.
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD check_idempotency.
+    " Return true if message id already processed
+    rv_duplicate = abap_false.
+    IF is_in-messageid IS NOT INITIAL.
+      SELECT SINGLE * FROM zmes_log
+        WHERE message_id = @is_in-messageid AND process_flag = 'P'.
+      IF sy-subrc = 0.
+        rv_duplicate = abap_true.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD log_message.
+    " Write/Update into ZMES_LOG
+    DATA: ls_log TYPE zmes_log.
+    CLEAR ls_log.
+    ls_log-message_id = is_in-messageid.
+    ls_log-aufnr      = is_in-processorder.
+    ls_log-vornr      = is_in-operation.
+    ls_log-mes_order_id = is_in-mesorderid.
+    ls_log-status_in  = is_in-status.
+    ls_log-received_ts = sy-uzeit && sy-datum. " or use timestamp get internal table
+    ls_log-payload    = i_payload.
+    ls_log-process_flag = iv_flag.
+    ls_log-error_text = iv_err.
+
+    " Upsert into ZMES_LOG: prefer UPDATE -> if not exist INSERT
+    SELECT SINGLE * FROM zmes_log
+      WHERE message_id = ls_log-message_id.
+    IF sy-subrc = 0.
+      UPDATE zmes_log SET
+        process_flag = ls_log-process_flag,
+        error_text   = ls_log-error_text,
+        retry_cnt    = retry_cnt + 1
+      WHERE message_id = ls_log-message_id.
+    ELSE.
+      INSERT zmes_log VALUES ls_log.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD update_mapping_table.
+    " Insert or update link record for this mesOrderid
+    DATA ls_link TYPE zmes_link.
+    CLEAR ls_link.
+    ls_link-aufnr = is_in-processorder.
+    ls_link-vornr = is_in-operation.
+    ls_link-zmes_order_id = is_in-mesorderid.
+    ls_link-mes_status = is_in-status.
+    ls_link-created_at = sy-datum && sy-uzeit.
+    ls_link-message_id = is_in-messageid.
+    ls_link-created_by = sy-uname.
+
+    " If exists update, else insert
+    SELECT SINGLE * FROM zmes_link
+      WHERE aufnr = ls_link-aufnr AND vornr = ls_link-vornr AND zmes_order_id = ls_link-zmes_order_id.
+    IF sy-subrc = 0.
+      UPDATE zmes_link SET
+        mes_status   = ls_link-mes_status,
+        last_upd_at  = ls_link-created_at,
+        message_id   = ls_link-message_id
+      WHERE aufnr = ls_link-aufnr AND vornr = ls_link-vornr AND zmes_order_id = ls_link-zmes_order_id.
+    ELSE.
+      INSERT zmes_link VALUES ls_link.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD aggregate_and_update_status.
+    " Determine if op should be STARTED or COMPLETED based on all MES orders for this AUFNR/VORNR
+    rv_ok = abap_false.
+    DATA: lt_links TYPE TABLE OF zmes_link,
+          lv_any_not_completed TYPE abap_bool VALUE abap_false.
+
+    SELECT * FROM zmes_link INTO TABLE lt_links
+      WHERE aufnr = is_in-processorder AND vornr = is_in-operation.
+
+    IF sy-subrc <> 0.
+      " no mapping entries found -> still attempt to update status for single mapping
+      " but do not fail hard; insert a single mapping above already did
     ENDIF.
 
-    IF NOT ls_param-pval03 IS INITIAL.
-      SPLIT ls_param-pval03 AT ',' INTO TABLE lt_mtart.
-      LOOP AT lt_mtart INTO ls_mtart WHERE table_line IS NOT INITIAL.
-        r_mtart-sign = 'I'.
-        r_mtart-option = 'EQ'.
-        r_mtart-low = ls_mtart.
-        APPEND r_mtart.
-      ENDLOOP.
+    " If incoming status is STARTED => if there is no existing started flag, set op STARTED
+    IF is_in-status = 'STARTED'.
+      " Check whether operation already has a started system status via table JEST or via stored flag - simplified: call BAPI to create partial confirmation
+      rv_ok = conf_operation_by_bapi( is_in = is_in ).
+      RETURN.
     ENDIF.
 
-    IF NOT ls_param-pval04 IS INITIAL.
-      SPLIT ls_param-pval04 AT ',' INTO TABLE lt_mtart.
-      LOOP AT lt_mtart INTO ls_mtart WHERE table_line IS NOT INITIAL.
-        r_mtart-sign = 'I'.
-        r_mtart-option = 'EQ'.
-        r_mtart-low = ls_mtart.
-        APPEND r_mtart.
+    " If incoming status is COMPLETED -> check all mes orders for that op are COMPLETED
+    IF is_in-status = 'COMPLETED'.
+      LOOP AT lt_links INTO DATA(ls_link).
+        IF ls_link-mes_status <> 'COMPLETED'.
+          lv_any_not_completed = abap_true.
+          EXIT.
+        ENDIF.
       ENDLOOP.
+
+      IF lv_any_not_completed = abap_false.
+        " All MES orders completed -> final confirmation
+        rv_ok = conf_operation_by_bapi( is_in = is_in ).
+      ELSE.
+        " partial completions - do not finalize SAP op; optionally post partial confirmation
+        " Post a partial confirmation (yield=0) or do nothing
+        rv_ok = abap_true.
+      ENDIF.
+      RETURN.
     ENDIF.
-  ENDIF.
 
-  CLEAR: r_exdate[], r_exdate.
-  lv_datum = sy-datum.
+    " unknown status - mark as error
+    rv_ok = abap_false.
+  ENDMETHOD.
 
-  CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
-    EXPORTING
-      day_in = lv_datum
-    IMPORTING
-      last_day_of_month = lv_datum.
-  IF sy-subrc = 0.
-    r_exdate-sign = 'I'.
-    r_exdate-option = 'LE'.
-    r_exdate-low = lv_datum.
-    APPEND r_exdate.
-  ENDIF.
 
-  lr_psphi  = r_psphi[].
-  lr_pspnr  = r_pspnr[].
-  lr_werks  = r_werks[].
-  lr_charg  = r_charg[].
-  lr_matnr  = r_matnr[].
-  lr_mtart  = r_mtart[].
-  lr_exdate = r_exdate[].
-  lr_amtsr  = r_amtsr[].
-  lr_ernam  = r_ernam[].
-  lr_erdat  = r_erdat[].
-  lr_status = r_status[].
-  lv_batrel = p_batrel.
-ENDFORM.
+  METHOD conf_operation_by_bapi.
+    " Use production order confirmation BAPI. Example: BAPI_PRODORDCONF_CREATE_TT or CO* functions.
+    rv_ok = abap_false.
 
-*---------------------------------------------------------------------*
-* VALIDATE_DATA
-*---------------------------------------------------------------------*
-FORM validate_data.
-  CASE sy-ucomm.
-    WHEN 'EXECUTE'.
-      CASE abap_true.
-        WHEN p_rb1.
-          IF r_werks[] IS INITIAL.
-            MESSAGE 'Please Maintain Plant' TYPE 'E'.
-          ENDIF.
-          IF r_charg[] IS INITIAL.
-            MESSAGE 'Please Maintain Batch' TYPE 'E'.
-          ENDIF.
-        WHEN p_rb2.
-          IF r_psphi[] IS INITIAL AND r_pspnr[] IS INITIAL.
-            MESSAGE 'Please Maintain either Project or WBS' TYPE 'E'.
-          ENDIF.
-      ENDCASE.
-    WHEN 'REC'.
-      r_psphi[]  = lr_psphi[].
-      r_pspnr[]  = lr_pspnr[].
-      r_werks[]  = lr_werks[].
-      r_charg[]  = lr_charg[].
-      r_matnr[]  = lr_matnr[].
-      r_mtart[]  = lr_mtart[].
-      r_exdate[] = lr_exdate[].
-      r_amtsr[]  = lr_amtsr[].
-      r_ernam[]  = lr_ernam[].
-      r_erdat[]  = lr_erdat[].
-      r_status[] = lr_status[].
-      p_batrel   = lv_batrel.
-  ENDCASE.
-ENDFORM.
+    TRY.
+      " Prepare internal tables for the BAPI
+      DATA: lt_head   TYPE TABLE OF bapiparex,    " adjust types based on BAPI signature
+            lt_items  TYPE TABLE OF bapime, etc.
 
-*---------------------------------------------------------------------*
-* MODIFY_SCREEN
-*---------------------------------------------------------------------*
-FORM modify_screen.
-  LOOP AT SCREEN.
-    CASE screen-group1.
-      WHEN 'M1'. IF p_rb1 IS INITIAL. screen-active = 0. ENDIF.
-      WHEN 'M2'. IF p_rb2 IS INITIAL. screen-active = 0. ENDIF.
-      WHEN 'M3'. IF p_rb3 IS INITIAL. screen-active = 0. ENDIF.
-      WHEN 'M4'. IF NOT p_rb1 IS INITIAL. screen-active = 0. ENDIF.
-      WHEN 'M5'. IF NOT p_rb2 IS INITIAL. screen-active = 0. ENDIF.
-    ENDCASE.
-    MODIFY SCREEN.
-  ENDLOOP.
-ENDFORM.
+      " Simpler option: use BAPI_PRODORDCONF_CREATE_TT (check your system for correct BAPI signature)
+      CALL FUNCTION 'BAPI_PRODORDCONF_CREATE_TT'
+        EXPORTING
+          orderid = is_in-processorder
+*         other params as required...
+        TABLES
+          t_conf = DATA(lt_conf)   " adjust per BAPI
+        EXCEPTIONS
+          OTHERS = 1.
+      IF sy-subrc <> 0.
+        " Write error to log and raise
+        RAISE EXCEPTION TYPE cx_root.
+      ENDIF.
 
-*---------------------------------------------------------------------*
-* BDC_DYNPRO
-*---------------------------------------------------------------------*
-FORM bdc_dynpro USING iv_program iv_dynpro
-                CHANGING ct_bdcdata TYPE bdcdata_tab.
-  CLEAR ls_bdcdata.
-  ls_bdcdata-program  = iv_program.
-  ls_bdcdata-dynpro   = iv_dynpro.
-  ls_bdcdata-dynbegin = 'X'.
-  APPEND ls_bdcdata TO ct_bdcdata.
-ENDFORM.
+      " Commit work
+      PERFORM commit_work.
+      rv_ok = abap_true.
 
-*---------------------------------------------------------------------*
-* BDC_FIELD
-*---------------------------------------------------------------------*
-FORM bdc_field USING iv_fnam iv_fval
-               CHANGING ct_bdcdata TYPE bdcdata_tab.
-  CLEAR ls_bdcdata.
-  ls_bdcdata-fnam = iv_fnam.
-  WRITE iv_fval TO ls_bdcdata-fval LEFT-JUSTIFIED.
-  APPEND ls_bdcdata TO ct_bdcdata.
-ENDFORM.
+    CATCH cx_root INTO DATA(lx).
+      rv_ok = abap_false.
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.
