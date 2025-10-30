@@ -1,195 +1,45 @@
-CLASS zcl_p2m_mes_if_inbound DEFINITION
-  PUBLIC
-  FINAL
-  CREATE PUBLIC.
+METHOD handle_inbound.
+  DATA: ls_data TYPE zsp2m_mes_inbound,
+        lv_json TYPE string,
+        lv_ok   TYPE abap_bool.
 
-  PUBLIC SECTION.
+  TRY.
+      " Convert SSTRING to STRING for JSON parsing
+      lv_json = i_payload.
 
-    METHODS handle_inbound
-      IMPORTING
-        i_payload TYPE sstring
-      RETURNING
-        VALUE(rv_success) TYPE abap_bool.
+      " Parse JSON payload into ABAP structure
+      me->parse_payload(
+        EXPORTING i_payload = lv_json
+        IMPORTING es_data   = ls_data ).
 
-    METHODS parse_payload
-      IMPORTING
-        i_payload TYPE string
-      EXPORTING
-        es_data   TYPE zsp2m_mes_inbound
-      RAISING
-        cx_root.
-
-  PRIVATE SECTION.
-
-    METHODS check_idempotency
-      IMPORTING
-        is_data TYPE zsp2m_mes_inbound
-      RETURNING
-        VALUE(rv_dup) TYPE abap_bool.
-
-    METHODS log_message
-      IMPORTING
-        is_data  TYPE zsp2m_mes_inbound
-        iv_error TYPE string OPTIONAL.
-
-    METHODS update_mapping_table
-      IMPORTING
-        is_data TYPE zsp2m_mes_inbound.
-
-    METHODS aggregate_and_update_status
-      IMPORTING
-        is_data TYPE zsp2m_mes_inbound.
-
-    METHODS confirm_operation_by_bapi
-      IMPORTING
-        is_data TYPE zsp2m_mes_inbound
-      RETURNING
-        VALUE(rv_ok) TYPE abap_bool.
-
-ENDCLASS.
-
-
-
-
-
-
-
-
-
-
-
-CLASS zcl_p2m_mes_if_inbound IMPLEMENTATION.
-
-  METHOD handle_inbound.
-    DATA: ls_data TYPE zsp2m_mes_inbound,
-          lv_json TYPE string,
-          lv_ok   TYPE abap_bool.
-
-    TRY.
-        "Convert SSTRING → STRING for JSON parsing
-        lv_json = i_payload.
-
-        "Parse JSON into structure
-        me->parse_payload(
-          EXPORTING i_payload = lv_json
-          IMPORTING es_data   = ls_data ).
-
-        "Check for duplicate
-        IF me->check_idempotency( ls_data ) = abap_true.
-          me->log_message(
-            is_data  = ls_data
-            iv_error = 'Duplicate message (already processed)' ).
-          RETURN.
-        ENDIF.
-
-        "Main processing
-        me->update_mapping_table( ls_data ).
-        me->aggregate_and_update_status( ls_data ).
-
-        lv_ok = me->confirm_operation_by_bapi( ls_data ).
-
-        "Log result
-        IF lv_ok = abap_true.
-          me->log_message( is_data = ls_data ).
-        ELSE.
-          me->log_message(
-            is_data  = ls_data
-            iv_error = 'BAPI confirmation failed' ).
-        ENDIF.
-
-      CATCH cx_root INTO DATA(lx).
+      " Check duplicate message ID
+      IF me->check_idempotency( ls_data ) = abap_true.
         me->log_message(
           is_data  = ls_data
-          iv_error = |{ lx->if_message~get_text( ) }| ).
-    ENDTRY.
+          iv_error = 'Duplicate message (already processed)' ).
+        RETURN.
+      ENDIF.
 
-    rv_success = abap_true.
-  ENDMETHOD.
+      " Process main logic
+      me->update_mapping_table( ls_data ).
+      me->aggregate_and_update_status( ls_data ).
 
+      lv_ok = me->confirm_operation_by_bapi( ls_data ).
 
-  METHOD parse_payload.
-    DATA(lv_json) TYPE string.
-    lv_json = i_payload.
-
-    TRY.
-        /ui2/cl_json=>deserialize(
-          EXPORTING json = lv_json
-          CHANGING  data = es_data ).
-      CATCH cx_root INTO DATA(lx).
-        RAISE EXCEPTION lx.
-    ENDTRY.
-  ENDMETHOD.
-
-
-  METHOD check_idempotency.
-    rv_dup = abap_false.
-
-    SELECT SINGLE message_id
-      FROM ztbl_p2m_meslog
-      INTO @DATA(lv_msgid)
-      WHERE message_id  = @is_data-messageid
-        AND process_flag = 'P'.
-
-    IF sy-subrc = 0.
-      rv_dup = abap_true.
-    ENDIF.
-  ENDMETHOD.
-
-
-  METHOD log_message.
-    DATA(ls_log) = VALUE ztbl_p2m_meslog(
-                      message_id    = is_data-messageid
-                      payload_short = is_data-payload_short
-                      process_flag  = COND #( WHEN iv_error IS INITIAL THEN 'P' ELSE 'E' )
-                      created_on    = sy-datum
-                      created_at    = sy-uzeit
-                      created_by    = sy-uname
-                      error_message = iv_error ).
-
-    TRY.
-        INSERT ztbl_p2m_meslog FROM @ls_log.
-      CATCH cx_sy_open_sql_db INTO DATA(lx_sql).
-        MESSAGE lx_sql->get_text( ) TYPE 'E'.
-    ENDTRY.
-  ENDMETHOD.
-
-
-  METHOD update_mapping_table.
-    UPDATE ztbl_p2m_meslink
-      SET status = 'M'
-      WHERE message_id = @is_data-messageid.
-  ENDMETHOD.
-
-
-  METHOD aggregate_and_update_status.
-    UPDATE ztbl_p2m_meslink
-      SET status = 'A'
-      WHERE message_id = @is_data-messageid.
-  ENDMETHOD.
-
-
-  METHOD confirm_operation_by_bapi.
-    DATA: lt_conf TYPE TABLE OF bapi_pp_conf_t,
-          lv_ok   TYPE abap_bool.
-
-    TRY.
-        CALL FUNCTION 'BAPI_PRODORDCONF_CREATE_TT'
-          EXPORTING
-            orderid = is_data-processororder
-          TABLES
-            tt_conf = lt_conf.
-
-        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
-          EXPORTING
-            wait = 'X'.
-
-        rv_ok = abap_true.
-      CATCH cx_root INTO DATA(lx).
-        rv_ok = abap_false.
+      " Logging result
+      IF lv_ok = abap_true.
+        me->log_message( is_data = ls_data ).
+      ELSE.
         me->log_message(
-          is_data  = is_data
-          iv_error = |{ lx->if_message~get_text( ) }| ).
-    ENDTRY.
-  ENDMETHOD.
+          is_data  = ls_data
+          iv_error = 'BAPI confirmation failed' ).
+      ENDIF.
 
-ENDCLASS.
+    CATCH cx_root INTO DATA(lx).
+      me->log_message(
+        is_data  = ls_data
+        iv_error = |{ lx->if_message~get_text( ) }| ).
+  ENDTRY.
+
+  rv_success = abap_true.
+ENDMETHOD.
