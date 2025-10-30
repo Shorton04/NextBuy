@@ -7,15 +7,15 @@ CLASS zcl_p2m_mes_if_inbound DEFINITION
 
     METHODS handle_inbound
       IMPORTING
-        i_payload TYPE sstring       "From CPI or FM
+        i_payload TYPE sstring
       RETURNING
         VALUE(rv_success) TYPE abap_bool.
 
     METHODS parse_payload
       IMPORTING
-        i_payload TYPE string        "Used for JSON parsing
+        i_payload TYPE string
       EXPORTING
-        es_data   TYPE zstr_p2m_mes_inbound
+        es_data   TYPE zsp2m_mes_inbound
       RAISING
         cx_root.
 
@@ -23,46 +23,58 @@ CLASS zcl_p2m_mes_if_inbound DEFINITION
 
     METHODS check_idempotency
       IMPORTING
-        is_data TYPE zstr_p2m_mes_inbound
+        is_data TYPE zsp2m_mes_inbound
       RETURNING
         VALUE(rv_dup) TYPE abap_bool.
 
     METHODS log_message
       IMPORTING
-        is_data  TYPE zstr_p2m_mes_inbound
+        is_data  TYPE zsp2m_mes_inbound
         iv_error TYPE string OPTIONAL.
 
     METHODS update_mapping_table
       IMPORTING
-        is_data TYPE zstr_p2m_mes_inbound.
+        is_data TYPE zsp2m_mes_inbound.
 
     METHODS aggregate_and_update_status
       IMPORTING
-        is_data TYPE zstr_p2m_mes_inbound.
+        is_data TYPE zsp2m_mes_inbound.
 
     METHODS confirm_operation_by_bapi
       IMPORTING
-        is_data TYPE zstr_p2m_mes_inbound
+        is_data TYPE zsp2m_mes_inbound
       RETURNING
         VALUE(rv_ok) TYPE abap_bool.
 
 ENDCLASS.
 
 
+
+
+
+
+
+
+
+
+
 CLASS zcl_p2m_mes_if_inbound IMPLEMENTATION.
 
   METHOD handle_inbound.
-    DATA: ls_data TYPE zstr_p2m_mes_inbound,
+    DATA: ls_data TYPE zsp2m_mes_inbound,
           lv_json TYPE string,
           lv_ok   TYPE abap_bool.
 
     TRY.
-        lv_json = i_payload.  "Convert SSTRING → STRING
+        "Convert SSTRING → STRING for JSON parsing
+        lv_json = i_payload.
 
+        "Parse JSON into structure
         me->parse_payload(
           EXPORTING i_payload = lv_json
           IMPORTING es_data   = ls_data ).
 
+        "Check for duplicate
         IF me->check_idempotency( ls_data ) = abap_true.
           me->log_message(
             is_data  = ls_data
@@ -70,11 +82,13 @@ CLASS zcl_p2m_mes_if_inbound IMPLEMENTATION.
           RETURN.
         ENDIF.
 
+        "Main processing
         me->update_mapping_table( ls_data ).
         me->aggregate_and_update_status( ls_data ).
 
         lv_ok = me->confirm_operation_by_bapi( ls_data ).
 
+        "Log result
         IF lv_ok = abap_true.
           me->log_message( is_data = ls_data ).
         ELSE.
@@ -111,7 +125,7 @@ CLASS zcl_p2m_mes_if_inbound IMPLEMENTATION.
     rv_dup = abap_false.
 
     SELECT SINGLE message_id
-      FROM zmes_log
+      FROM ztbl_p2m_meslog
       INTO @DATA(lv_msgid)
       WHERE message_id  = @is_data-messageid
         AND process_flag = 'P'.
@@ -123,7 +137,7 @@ CLASS zcl_p2m_mes_if_inbound IMPLEMENTATION.
 
 
   METHOD log_message.
-    DATA(ls_log) = VALUE zmes_log(
+    DATA(ls_log) = VALUE ztbl_p2m_meslog(
                       message_id    = is_data-messageid
                       payload_short = is_data-payload_short
                       process_flag  = COND #( WHEN iv_error IS INITIAL THEN 'P' ELSE 'E' )
@@ -133,7 +147,7 @@ CLASS zcl_p2m_mes_if_inbound IMPLEMENTATION.
                       error_message = iv_error ).
 
     TRY.
-        INSERT zmes_log FROM @ls_log.
+        INSERT ztbl_p2m_meslog FROM @ls_log.
       CATCH cx_sy_open_sql_db INTO DATA(lx_sql).
         MESSAGE lx_sql->get_text( ) TYPE 'E'.
     ENDTRY.
@@ -141,14 +155,14 @@ CLASS zcl_p2m_mes_if_inbound IMPLEMENTATION.
 
 
   METHOD update_mapping_table.
-    UPDATE zmes_link
+    UPDATE ztbl_p2m_meslink
       SET status = 'M'
       WHERE message_id = @is_data-messageid.
   ENDMETHOD.
 
 
   METHOD aggregate_and_update_status.
-    UPDATE zmes_link
+    UPDATE ztbl_p2m_meslink
       SET status = 'A'
       WHERE message_id = @is_data-messageid.
   ENDMETHOD.
