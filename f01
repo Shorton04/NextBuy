@@ -1,35 +1,9 @@
-METHOD /iwbep/if_mgw_appl_srv_runtime~execute_action.
-  DATA: ls_result  TYPE bapiret2,
-        ls_inbound TYPE zsp2m_mes_inbound,
-        lo_handler TYPE REF TO zcl_p2m_mes_if_inbound.
-
-  TRY.
-      CASE iv_action_name.
-        WHEN 'ProcessMESInbound'.
-
-          ls_inbound-messageid   = VALUE #( it_parameter[ name = 'MessageID' ]-value OPTIONAL ).
-          ls_inbound-processorder = VALUE #( it_parameter[ name = 'ProcessOrder' ]-value OPTIONAL ).
-          ls_inbound-operation    = VALUE #( it_parameter[ name = 'Operation' ]-value OPTIONAL ).
-          ls_inbound-plant        = VALUE #( it_parameter[ name = 'Plant' ]-value OPTIONAL ).
-          ls_inbound-status       = VALUE #( it_parameter[ name = 'Status' ]-value OPTIONAL ).
-          ls_inbound-userid       = VALUE #( it_parameter[ name = 'UserID' ]-value OPTIONAL ).
-          ls_inbound-payload      = VALUE #( it_parameter[ name = 'Payload' ]-value OPTIONAL ).
-
-          CREATE OBJECT lo_handler.
-          lo_handler->handle_inbound(
-            EXPORTING is_data = ls_inbound
-            IMPORTING es_return = ls_result
-          ).
-
-        WHEN OTHERS.
-          ls_result-type = 'E'.
-          ls_result-message = |Unsupported action { iv_action_name }|.
-      ENDCASE.
-
-    CATCH cx_root INTO DATA(lx).
-      ls_result-type = 'E'.
-      ls_result-message = lx->get_text( ).
-  ENDTRY.
-
-  copy_data_to_ref( EXPORTING is_data = ls_result CHANGING cr_data = er_data ).
-ENDMETHOD.
+{
+  "MessageID": "MES-20251030-001",
+  "ProcessOrder": "PO12345678",
+  "Operation": "0100",
+  "Plant": "PH10",
+  "Status": "DONE",
+  "UserID": "MESUSER",
+  "Payload": "{ 'note': 'Test inbound JSON' }"
+}
