@@ -1,17 +1,21 @@
-METHOD parse_payload.
-  DATA(lv_json) TYPE string.
-  lv_json = i_payload.  "Convert CHAR → STRING
+METHOD confirm_operation_by_bapi.
+  DATA: lt_conf TYPE TABLE OF bapi_pp_conf_t,  "or your BAPI structure
+        lv_ok   TYPE abap_bool.
 
   TRY.
-      /ui2/cl_json=>deserialize(
+      CALL FUNCTION 'BAPI_PRODORDCONF_CREATE_TT'
         EXPORTING
-          json = lv_json
-        CHANGING
-          data = es_data
-      ).
+          orderid = is_data-processororder
+        TABLES
+          tt_conf = lt_conf.  "Adjust table parameter name
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'X'.
+
+      rv_ok = abap_true.
+
     CATCH cx_root INTO DATA(lx).
-      RAISE EXCEPTION lx. " re-raise caught exception
+      rv_ok = abap_false.
   ENDTRY.
 ENDMETHOD.
-
-
