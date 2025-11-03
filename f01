@@ -1,17 +1,101 @@
-001 E Please enter at least one Order or Plant.
-002 I No orders found for selection criteria.
-003 E User not authorized to change orders.
-004 E Cannot determine status profile for order &1.
-005 E KCMP user status not found for profile &1 and language &2.
-006 I No data available to display.
-007 E Please enter at least one order or plant.
-008 I No orders found for selection criteria.
-009 E User not authorized to change orders (C_AFKO_ACT ACTVT 02).
-010 I KCMP set successfully for order &1.
-011 I KCMP reset successfully for order &1.
-012 I Locks released for order &1.
-013 I (use for locks) Locks released for order &1.
-014 I KCMP already active for order &1.
-015 I Incomplete components for order &1.
-016 I Ready to set KCMP for order &1.
-017 E BAPI error: &1
+*---------------------------------------------------------------------*
+* FORM: update_user_status
+*---------------------------------------------------------------------*
+FORM update_user_status.
+
+  LOOP AT gt_log INTO DATA(ls_log).
+
+    "--------------------------------------------------------------*
+    " Skip SET if KCMP already active
+    "--------------------------------------------------------------*
+    IF p_set = abap_true AND ls_log-kcmp_active = abap_true.
+      MESSAGE i018(ZA2R_KCMPMSG) WITH ls_log-aufnr INTO ls_log-msgtxt.
+      ls_log-light = gc_light_green.
+      MODIFY gt_log FROM ls_log.
+      CONTINUE.
+    ENDIF.
+
+    "--------------------------------------------------------------*
+    " Skip RESET if KCMP not active
+    "--------------------------------------------------------------*
+    IF p_reset = abap_true AND ls_log-kcmp_active = abap_false.
+      MESSAGE i019(ZA2R_KCMPMSG) WITH ls_log-aufnr INTO ls_log-msgtxt.
+      ls_log-light = gc_light_red.
+      MODIFY gt_log FROM ls_log.
+      CONTINUE.
+    ENDIF.
+
+    "--------------------------------------------------------------*
+    " Proceed with valid KCMP update
+    "--------------------------------------------------------------*
+    DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
+          lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
+          lt_methods TYPE TABLE OF bapi_alm_order_method,
+          lt_return  TYPE TABLE OF bapiret2,
+          ls_return  TYPE bapiret2,
+          lv_action  TYPE string,
+          lv_msgtxt  TYPE string.
+
+    IF p_reset = abap_true.
+      lv_action = 'RESET'.
+    ELSE.
+      lv_action = 'SET'.
+    ENDIF.
+
+    APPEND VALUE #( orderid = ls_log-aufnr ) TO lt_header.
+
+    IF lv_action = 'SET'.
+      APPEND VALUE #( user_st_text = 'KCMP' langu = p_spras ) TO lt_status.
+    ELSE.
+      APPEND VALUE #( user_st_text = 'KCMP' inactive = abap_true langu = p_spras ) TO lt_status.
+    ENDIF.
+
+    "--------------------------------------------------------------*
+    " Correct BAPI linkage (same refnumber for all operations)
+    "--------------------------------------------------------------*
+    APPEND VALUE #( refnumber = '00001'
+                    objecttype = 'HEADER'
+                    method = 'CHANGE'
+                    objectkey = ls_log-aufnr ) TO lt_methods.
+
+    APPEND VALUE #( refnumber = '00001'
+                    objecttype = 'USERSTATUS'
+                    method = 'CHANGE'
+                    objectkey = ls_log-aufnr ) TO lt_methods.
+
+    APPEND VALUE #( refnumber = '00001'
+                    objecttype = 'ORDER'
+                    method = 'SAVE'
+                    objectkey = ls_log-aufnr ) TO lt_methods.
+
+    CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
+      TABLES
+        it_header     = lt_header
+        it_methods    = lt_methods
+        it_userstatus = lt_status
+        return        = lt_return.
+
+    READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
+    IF sy-subrc = 0.
+      ls_log-msgtxt = ls_return-message.
+      ls_log-light  = gc_light_red.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    ELSE.
+      IF lv_action = 'SET'.
+        MESSAGE s001(ZA2R_KCMPMSG) INTO lv_msgtxt. "KCMP set successfully
+      ELSE.
+        MESSAGE s002(ZA2R_KCMPMSG) INTO lv_msgtxt. "KCMP reset successfully
+      ENDIF.
+      ls_log-msgtxt = lv_msgtxt.
+      ls_log-light  = gc_light_green.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+    ENDIF.
+
+    PERFORM release_locks USING ls_log-aufnr.
+    MODIFY gt_log FROM ls_log.
+
+  ENDLOOP.
+
+  COMMIT WORK.
+
+ENDFORM.
