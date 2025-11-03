@@ -1,97 +1,34 @@
-CLASS zcl_p2m_mes_if_mpc DEFINITION
-  PUBLIC
-  INHERITING FROM /iwbep/cl_mgw_push_abs_model
-  CREATE PUBLIC.
+* ====================================================================
+* RICEFW ID.........: 7281
+* TR Number.........: D30K906626
+* Version...........: 1.0
+* Program...........: ZTR_A2R_KCMP_STATUS
+* Transaction Code..: SE38
+* Author............: HQ75177
+* Date..............: 27.10.2025
+* --------------------------------------------------------------------
+* Description.......: Set / Reset KCMP user status
+*                          for PM Orders (Kitting)
+* --------------------------------------------------------------------
+* Modification list.:
+* Date          Author    TR Number          Description
+* 27.10.2025   HQ75177    D30K907395    ENHANCED EVALUATION OF KITTING
+* ====================================================================
+REPORT ztr_a2r_kcmp_status.
 
-  PUBLIC SECTION.
+INCLUDE ztr_a2r_kcmp_status_top.
+INCLUDE ztr_a2r_kcmp_status_sel.
+INCLUDE ztr_a2r_kcmp_status_f01.
 
-    TYPES: BEGIN OF ts_mes_inbound,
-             messageid TYPE c LENGTH 36,
-             processorder TYPE c LENGTH 12,
-             operation TYPE c LENGTH 4,
-             plant TYPE c LENGTH 4,
-             status TYPE c LENGTH 10,
-             userid TYPE c LENGTH 12,
-             payload TYPE string,
-           END OF ts_mes_inbound.
+INITIALIZATION.
+  PERFORM init_defaults.
 
-    TYPES: tt_mes_inbound TYPE STANDARD TABLE OF ts_mes_inbound WITH DEFAULT KEY.
-
-    TYPES: ts_returnmessage TYPE bapiret2,
-           tt_returnmessage TYPE STANDARD TABLE OF bapiret2 WITH DEFAULT KEY.
-
-    CONSTANTS gc_returnmessage TYPE /iwbep/if_mgw_med_odata_types=>ty_e_med_entity_name VALUE 'ReturnMessage'.
-
-    METHODS define REDEFINITION.
-    METHODS get_last_modified REDEFINITION.
-
-  PROTECTED SECTION.
-  PRIVATE SECTION.
-
-    METHODS define_mesinbound RAISING /iwbep/cx_mgw_med_exception.
-    METHODS define_returnmessage RAISING /iwbep/cx_mgw_med_exception.
-
-ENDCLASS.
-
-
-
-CLASS zcl_p2m_mes_if_mpc IMPLEMENTATION.
-
-  METHOD define.
-    model->set_schema_namespace( 'ZP2M_MES_IF_SRV' ).
-
-    define_mesinbound( ).
-    define_returnmessage( ).
-  ENDMETHOD.
-
-  METHOD define_mesinbound.
-    DATA: lo_entity_type TYPE REF TO /iwbep/if_mgw_odata_entity_typ,
-          lo_property    TYPE REF TO /iwbep/if_mgw_odata_property,
-          lo_entity_set  TYPE REF TO /iwbep/if_mgw_odata_entity_set.
-
-    lo_entity_type = model->create_entity_type( iv_entity_type_name = 'MESInbound' iv_def_entity_set = abap_true ).
-
-    lo_property = lo_entity_type->create_property( iv_property_name = 'MessageID' iv_abap_fieldname = 'MESSAGEID' ).
-    lo_property->set_is_key( ).
-    lo_property->set_type_edm_string( ).
-
-    lo_property = lo_entity_type->create_property( iv_property_name = 'ProcessOrder' iv_abap_fieldname = 'PROCESSORDER' ).
-    lo_property->set_type_edm_string( ).
-
-    lo_property = lo_entity_type->create_property( iv_property_name = 'Operation' iv_abap_fieldname = 'OPERATION' ).
-    lo_property->set_type_edm_string( ).
-
-    lo_property = lo_entity_type->create_property( iv_property_name = 'Plant' iv_abap_fieldname = 'PLANT' ).
-    lo_property->set_type_edm_string( ).
-
-    lo_property = lo_entity_type->create_property( iv_property_name = 'Status' iv_abap_fieldname = 'STATUS' ).
-    lo_property->set_type_edm_string( ).
-
-    lo_property = lo_entity_type->create_property( iv_property_name = 'UserID' iv_abap_fieldname = 'USERID' ).
-    lo_property->set_type_edm_string( ).
-
-    lo_property = lo_entity_type->create_property( iv_property_name = 'Payload' iv_abap_fieldname = 'PAYLOAD' ).
-    lo_property->set_type_edm_string( ).
-
-    lo_entity_type->bind_structure( iv_structure_name = 'ZCL_P2M_MES_IF_MPC=>TS_MES_INBOUND' ).
-
-    lo_entity_set = lo_entity_type->create_entity_set( 'MESInboundSet' ).
-  ENDMETHOD.
-
-  METHOD define_returnmessage.
-    DATA: lo_entity_type TYPE REF TO /iwbep/if_mgw_odata_entity_typ,
-          lo_property    TYPE REF TO /iwbep/if_mgw_odata_property,
-          lo_entity_set  TYPE REF TO /iwbep/if_mgw_odata_entity_set.
-
-    lo_entity_type = model->create_entity_type( iv_entity_type_name = 'ReturnMessage' iv_def_entity_set = abap_true ).
-
-    lo_entity_type->bind_structure( iv_structure_name = 'BAPIRET2' ).
-    lo_entity_set = lo_entity_type->create_entity_set( 'ReturnMessageSet' ).
-  ENDMETHOD.
-
-  METHOD get_last_modified.
-    CONSTANTS lc_gen_date TYPE timestamp VALUE '20251030180000'.
-    rv_last_modified = lc_gen_date.
-  ENDMETHOD.
-
-ENDCLASS.
+START-OF-SELECTION.
+  PERFORM validate_selection.
+  PERFORM fetch_orders.
+  PERFORM filter_by_jest.
+  PERFORM filter_has_components.
+  PERFORM evaluate_kitting.
+  PERFORM check_authorizations.
+  PERFORM update_user_status.
+  PERFORM display_execution_log.
