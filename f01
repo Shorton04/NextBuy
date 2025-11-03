@@ -1,103 +1,78 @@
 *---------------------------------------------------------------------*
-* FORM: release_locks
+* FORM: evaluate_kitting
 *---------------------------------------------------------------------*
-FORM release_locks USING p_aufnr TYPE aufk-aufnr.
+FORM evaluate_kitting.
 
-  DATA: lv_fm_used TYPE funcname VALUE space,
-        lt_fms     TYPE TABLE OF funcname,
-        lv_fm      TYPE funcname,
-        lv_exists  TYPE funcname,
-        lv_msg     TYPE char100.
+  DATA: lt_incomplete TYPE TABLE OF aufk-aufnr,
+        lv_kcmp_active TYPE abap_bool,
+        lv_estat TYPE jest-stat.
 
-  DATA: lv_aufnr    TYPE aufk-aufnr,
-        lv_rsnum    TYPE resb-rsnum,
-        lv_prueflos TYPE qals-prueflos,
-        lv_qmnum    TYPE qmel-qmnum,
-        lv_objnr    TYPE jest-objnr.
+  "--------------------------------------------------------------*
+  " 1. Find orders with incomplete components
+  "--------------------------------------------------------------*
+  SELECT DISTINCT r~aufnr
+    FROM resb AS r
+    INNER JOIN aufk AS a ON a~aufnr = r~aufnr
+    WHERE a~aufnr IN @s_aufnr
+      AND a~auart IN @s_auart
+      AND r~xloek = @space
+      AND r~enmng < r~bdmng
+    INTO TABLE @lt_incomplete.
 
-  " --- Normalize order number
-  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
-    EXPORTING
-      input  = p_aufnr
-    IMPORTING
-      output = lv_aufnr.
+  "--------------------------------------------------------------*
+  " 2. Assign traffic light and message based on completeness
+  "--------------------------------------------------------------*
+  LOOP AT gt_orders INTO DATA(ls_order).
 
-  " --- Related data (for optional unlocks)
-  SELECT SINGLE rsnum
-    INTO @lv_rsnum
-    FROM resb
-    WHERE aufnr = @lv_aufnr
-      AND xloek = @space.
+    " --- Check if KCMP status is already active in JEST
+    CLEAR lv_kcmp_active.
+    SELECT SINGLE stat
+      INTO @lv_estat
+      FROM jest
+      WHERE objnr = @ls_order-objnr
+        AND inact = @space
+        AND stat = @gc_estat.
 
-  SELECT SINGLE prueflos
-    INTO @lv_prueflos
-    FROM qals
-    WHERE aufnr = @lv_aufnr.
-
-  SELECT SINGLE qmnum
-    INTO @lv_qmnum
-    FROM qmel
-    WHERE aufnr = @lv_aufnr.
-
-  CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
-
-  " --- Build list of possible DEQUEUE FMs
-  lt_fms = VALUE #(
-    ( 'DEQUEUE_EAUFK' )   " Order header
-    ( 'DEQUEUE_EAFKO' )   " Order master data
-    ( 'DEQUEUE_EAFVC' )   " Operations
-    ( 'DEQUEUE_EEQUI' )   " Equipment
-    ( 'DEQUEUE_EIFLOT' )  " Functional Location
-    ( 'DEQUEUE_ERESB' )   " Reservation
-    ( 'DEQUEUE_ERKPF' )   " Reservation Header
-    ( 'DEQUEUE_EQALS' )   " Inspection lot
-    ( 'DEQUEUE_EQMEL' )   " Notification
-  ).
-
-  LOOP AT lt_fms INTO lv_fm.
-
-    " --- Skip if FM does not exist in system
-    SELECT SINGLE funcname INTO lv_exists
-      FROM tfdir
-      WHERE funcname = lv_fm.
-    IF sy-subrc <> 0.
-      CONTINUE.
+    IF sy-subrc = 0.
+      lv_kcmp_active = abap_true.
     ENDIF.
 
-    TRY.
-        CASE lv_fm.
-          WHEN 'DEQUEUE_EAUFK' OR 'DEQUEUE_EAFKO'.
-            CALL FUNCTION lv_fm EXPORTING aufnr = lv_aufnr.
+    READ TABLE lt_incomplete WITH KEY aufnr = ls_order-aufnr TRANSPORTING NO FIELDS.
 
-          WHEN 'DEQUEUE_EAFVC'.
-            CALL FUNCTION lv_fm EXPORTING objnr = lv_objnr.
+    IF lv_kcmp_active = abap_true.
+      " KCMP already set
+      APPEND VALUE #( aufnr  = ls_order-aufnr
+                      auart  = ls_order-auart
+                      iwerk  = ls_order-iwerk
+                      erdat  = ls_order-erdat
+                      gstrp  = ls_order-gstrp
+                      gltrp  = ls_order-gltrp
+                      msgtxt = 'KCMP already active'
+                      light  = 'Y' ) TO gt_log.
 
-          WHEN 'DEQUEUE_ERESB' OR 'DEQUEUE_ERKPF'.
-            IF lv_rsnum IS NOT INITIAL.
-              CALL FUNCTION lv_fm EXPORTING rsnum = lv_rsnum.
-            ENDIF.
+    ELSEIF sy-subrc = 0.
+      " Incomplete components
+      APPEND VALUE #( aufnr  = ls_order-aufnr
+                      auart  = ls_order-auart
+                      iwerk  = ls_order-iwerk
+                      erdat  = ls_order-erdat
+                      gstrp  = ls_order-gstrp
+                      gltrp  = ls_order-gltrp
+                      msgtxt = 'Incomplete components'
+                      light  = 'R' ) TO gt_log.
 
-          WHEN 'DEQUEUE_EQALS'.
-            IF lv_prueflos IS NOT INITIAL.
-              CALL FUNCTION lv_fm EXPORTING prueflos = lv_prueflos.
-            ENDIF.
-
-          WHEN 'DEQUEUE_EQMEL'.
-            IF lv_qmnum IS NOT INITIAL.
-              CALL FUNCTION lv_fm EXPORTING qmnum = lv_qmnum.
-            ENDIF.
-        ENDCASE.
-
-      CATCH cx_root INTO DATA(lx_root).
-        CONTINUE.
-    ENDTRY.
+    ELSE.
+      " Ready to set KCMP
+      APPEND VALUE #( aufnr  = ls_order-aufnr
+                      auart  = ls_order-auart
+                      iwerk  = ls_order-iwerk
+                      erdat  = ls_order-erdat
+                      gstrp  = ls_order-gstrp
+                      gltrp  = ls_order-gltrp
+                      msgtxt = 'Ready to set KCMP'
+                      light  = 'G' ) TO gt_log.
+    ENDIF.
 
   ENDLOOP.
-
-  " --- Final safety unlock (clears anything remaining in session)
-  CALL FUNCTION 'DEQUEUE_ALL'.
-
-  " --- Success message (replaces WRITE)
-  MESSAGE i013 WITH lv_aufnr.
 
 ENDFORM.
