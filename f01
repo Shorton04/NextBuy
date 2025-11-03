@@ -28,7 +28,6 @@ FORM release_locks USING p_aufnr TYPE aufk-aufnr.
     FROM resb
     WHERE aufnr = @lv_aufnr
       AND xloek = @space.
-      "AND kzear = @space.
 
   SELECT SINGLE prueflos
     INTO @lv_prueflos
@@ -98,7 +97,7 @@ FORM release_locks USING p_aufnr TYPE aufk-aufnr.
   " --- Final safety unlock (clears anything remaining in session)
   CALL FUNCTION 'DEQUEUE_ALL'.
 
-  CONCATENATE 'Locks released for order' lv_aufnr INTO lv_msg SEPARATED BY space.
-  WRITE: / lv_msg.
+  " --- Success message (replaces WRITE)
+  MESSAGE i013 WITH lv_aufnr.
 
 ENDFORM.
