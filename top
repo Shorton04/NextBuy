@@ -4,11 +4,11 @@
 
 TABLES: aufk, afih, afko, jest, resb, jsto, tj30, tj30t.
 
-INCLUDE <icon>.   " For traffic light icons in ALV
+INCLUDE <icon>.
 
-"--------------------------------------------------------------------*
-" Type Definitions
-"--------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* Type Definitions
+*---------------------------------------------------------------------*
 TYPES: BEGIN OF lty_order,
          aufnr TYPE aufk-aufnr,
          auart TYPE aufk-auart,
@@ -20,19 +20,25 @@ TYPES: BEGIN OF lty_order,
        END OF lty_order.
 
 TYPES: BEGIN OF lty_log,
-         aufnr   TYPE aufk-aufnr,   " Order
-         auart   TYPE aufk-auart,   " Order Type
-         iwerk   TYPE afih-iwerk,   " Plant
-         erdat   TYPE aufk-erdat,   " Created On
-         gstrp   TYPE afko-gstrp,   " Basic Start
-         gltrp   TYPE afko-gltrp,   " Basic Finish
-         msgtxt  TYPE string,       " Status Message
-         light   TYPE icon_d,       " Result (traffic light)
+         aufnr     TYPE aufk-aufnr,
+         auart     TYPE aufk-auart,
+         iwerk     TYPE afih-iwerk,
+         erdat     TYPE aufk-erdat,
+         gstrp     TYPE afko-gstrp,
+         gltrp     TYPE afko-gltrp,
+         msgtxt    TYPE string,
+         light     TYPE icon_d,
+         stsma     TYPE jsto-stsma,
+         bapi_id   TYPE bapiret2-id,
+         bapi_no   TYPE bapiret2-number,
+         bapi_msg  TYPE bapiret2-message,
+         timestamp TYPE sy-datum,
+         uname     TYPE sy-uname,
        END OF lty_log.
 
-"--------------------------------------------------------------------*
-" Global internal tables / variables
-"--------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* Global Tables and Variables
+*---------------------------------------------------------------------*
 DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
       gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY,
       gs_log    TYPE lty_log.
@@ -41,17 +47,16 @@ DATA: gv_user            TYPE sy-uname,
       gv_now             TYPE sy-datum,
       gv_user_authorized TYPE abap_bool VALUE abap_true.
 
-"--------------------------------------------------------------------*
-" Constants
-"--------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* Constants
+*---------------------------------------------------------------------*
 CONSTANTS:
-  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
-  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
+  gc_postp_l TYPE char1 VALUE 'L',   " Stock
+  gc_postp_n TYPE char1 VALUE 'N'.   " Non-stock
 
 CONSTANTS:
-  gc_light_green TYPE icon_d VALUE icon_led_green,     " Kitting complete
-  gc_light_red   TYPE icon_d VALUE icon_led_red,       " Incomplete
-  gc_light_inact TYPE icon_d VALUE icon_led_inactive.  " No components
+  gc_light_green TYPE icon_d VALUE icon_led_green,
+  gc_light_red   TYPE icon_d VALUE icon_led_red,
+  gc_light_inact TYPE icon_d VALUE icon_led_inactive.
 
-" KCMP internal status (filled dynamically later)
-DATA: gc_estat TYPE tj30-estat.
+DATA: gc_estat TYPE tj30-estat.   " filled dynamically
