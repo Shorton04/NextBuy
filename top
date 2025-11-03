@@ -1,23 +1,34 @@
-*---------------------------------------------------------------------*
-* TOP Include: Global Data Declaration
-*---------------------------------------------------------------------*
-TABLES: mara, afpo, rsapetdtl, prps, zkcgt_wbs_recog.
+* ====================================================================
+* RICEFW ID.........: 7281
+* TR Number.........: D30K906626
+* Version...........: 1.0
+* Program...........: ZTR_A2R_KCMP_STATUS
+* Transaction Code..: SE38
+* Author............: HQ75177
+* Date..............: 27.10.2025
+* --------------------------------------------------------------------
+* Description.......: Set / Reset KCMP user status
+*                          for PM Orders (Kitting)
+* --------------------------------------------------------------------
+* Modification list.:
+* Date          Author    TR Number          Description
+* 27.10.2025   HQ75177    D30K907395    ENHANCED EVALUATION OF KITTING
+* ====================================================================
+REPORT ztr_a2r_kcmp_status.
 
-DATA: go_controller TYPE REF TO zcl_a2d_controller,
-      go_model_view TYPE REF TO zcl_a2d_revenue_recog_consmat,
-      gs_parameter  TYPE zcl_a2d_revenue_recog_consmat=>ts_parameter,
-      ls_bdcdata    TYPE bdcdata.
+INCLUDE ztr_a2r_kcmp_status_top.
+INCLUDE ztr_a2r_kcmp_status_sel.
+INCLUDE ztr_a2r_kcmp_status_f01.
 
-" Selection screen range holders
-DATA: lr_psphi      TYPE RANGE OF prps-psphi,
-      lr_pspnr      TYPE RANGE OF prps-pspnr,
-      lr_werks      TYPE RANGE OF afpo-dwerk,
-      lr_charg      TYPE RANGE OF afpo-charg,
-      lr_matnr      TYPE RANGE OF mara-matnr,
-      lr_mtart      TYPE RANGE OF mara-mtart,
-      lr_exdate     TYPE RANGE OF rsapetdtl-extraction_date,
-      lr_amtsr      TYPE RANGE OF zkcgt_wbs_recog-amount_source,
-      lr_ernam      TYPE RANGE OF zkcgt_wbs_recog-ernam,
-      lr_erdat      TYPE RANGE OF zkcgt_wbs_recog-erdat,
-      lr_status     TYPE RANGE OF zkcgt_wbs_recog-status,
-      lv_batrel     TYPE flag.
+INITIALIZATION.
+  PERFORM init_defaults.
+
+START-OF-SELECTION.
+  PERFORM validate_selection.
+  PERFORM fetch_orders.
+  PERFORM filter_by_jest.
+  PERFORM filter_has_components.
+  PERFORM evaluate_kitting.
+  PERFORM check_authorizations.
+  PERFORM update_user_status.
+  PERFORM display_execution_log.
