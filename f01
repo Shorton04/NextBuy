@@ -339,3 +339,80 @@ FORM display_execution_log.
   lo_alv->get_columns( )->set_optimize( abap_true ).
   lo_alv->display( ).
 ENDFORM.
+
+
+*---------------------------------------------------------------------*
+* FORM: release_locks
+*---------------------------------------------------------------------*
+FORM release_locks USING p_aufnr TYPE aufk-aufnr.
+
+  DATA: lv_aufnr    TYPE aufk-aufnr,
+        lv_rsnum    TYPE resb-rsnum,
+        lv_prueflos TYPE qals-prueflos,
+        lv_qmnum    TYPE qmel-qmnum,
+        lv_objnr    TYPE jest-objnr,
+        lt_fms      TYPE TABLE OF funcname,
+        lv_fm       TYPE funcname,
+        lv_exists   TYPE funcname.
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING input = p_aufnr
+    IMPORTING output = lv_aufnr.
+
+  " Gather related objects
+  SELECT SINGLE rsnum INTO @lv_rsnum FROM resb
+   WHERE aufnr = @lv_aufnr AND xloek = @space.
+
+  SELECT SINGLE prueflos INTO @lv_prueflos FROM qals
+   WHERE aufnr = @lv_aufnr.
+
+  SELECT SINGLE qmnum INTO @lv_qmnum FROM qmel
+   WHERE aufnr = @lv_aufnr.
+
+  CONCATENATE 'OR' lv_aufnr INTO lv_objnr.
+
+  " Build list of possible DEQUEUE FMs
+  lt_fms = VALUE #(
+    ( 'DEQUEUE_EAUFK' )   " Order Header
+    ( 'DEQUEUE_EAFKO' )   " Order Master
+    ( 'DEQUEUE_EAFVC' )   " Operations
+    ( 'DEQUEUE_EEQUI' )   " Equipment
+    ( 'DEQUEUE_EIFLOT' )  " Functional Location
+    ( 'DEQUEUE_ERESB' )   " Reservation
+    ( 'DEQUEUE_ERKPF' )   " Reservation Header
+    ( 'DEQUEUE_EQALS' )   " Inspection Lot
+    ( 'DEQUEUE_EQMEL' )   " Notification
+  ).
+
+  LOOP AT lt_fms INTO lv_fm.
+    SELECT SINGLE funcname INTO lv_exists FROM tfdir WHERE funcname = lv_fm.
+    IF sy-subrc <> 0.
+      CONTINUE.
+    ENDIF.
+
+    TRY.
+        CASE lv_fm.
+          WHEN 'DEQUEUE_EAUFK' OR 'DEQUEUE_EAFKO'.
+            CALL FUNCTION lv_fm EXPORTING aufnr = lv_aufnr.
+          WHEN 'DEQUEUE_EAFVC'.
+            CALL FUNCTION lv_fm EXPORTING objnr = lv_objnr.
+          WHEN 'DEQUEUE_ERESB' OR 'DEQUEUE_ERKPF'.
+            IF lv_rsnum IS NOT INITIAL.
+              CALL FUNCTION lv_fm EXPORTING rsnum = lv_rsnum.
+            ENDIF.
+          WHEN 'DEQUEUE_EQALS'.
+            IF lv_prueflos IS NOT INITIAL.
+              CALL FUNCTION lv_fm EXPORTING prueflos = lv_prueflos.
+            ENDIF.
+          WHEN 'DEQUEUE_EQMEL'.
+            IF lv_qmnum IS NOT INITIAL.
+              CALL FUNCTION lv_fm EXPORTING qmnum = lv_qmnum.
+            ENDIF.
+        ENDCASE.
+      CATCH cx_root INTO DATA(lx_root).
+        CONTINUE.
+    ENDTRY.
+  ENDLOOP.
+
+  CALL FUNCTION 'DEQUEUE_ALL'.
+ENDFORM.
