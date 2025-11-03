@@ -1,14 +1,7 @@
-*&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_TOP
-*&---------------------------------------------------------------------*
-
 TABLES: aufk, afih, afko, jest, resb, jsto, tj30, tj30t.
 
 INCLUDE <icon>.
 
-*---------------------------------------------------------------------*
-* Type Definitions
-*---------------------------------------------------------------------*
 TYPES: BEGIN OF lty_order,
          aufnr TYPE aufk-aufnr,
          auart TYPE aufk-auart,
@@ -20,25 +13,16 @@ TYPES: BEGIN OF lty_order,
        END OF lty_order.
 
 TYPES: BEGIN OF lty_log,
-         aufnr     TYPE aufk-aufnr,
-         auart     TYPE aufk-auart,
-         iwerk     TYPE afih-iwerk,
-         erdat     TYPE aufk-erdat,
-         gstrp     TYPE afko-gstrp,
-         gltrp     TYPE afko-gltrp,
-         msgtxt    TYPE string,
-         light     TYPE icon_d,
-         stsma     TYPE jsto-stsma,
-         bapi_id   TYPE bapiret2-id,
-         bapi_no   TYPE bapiret2-number,
-         bapi_msg  TYPE bapiret2-message,
-         timestamp TYPE sy-datum,
-         uname     TYPE sy-uname,
+         aufnr   TYPE aufk-aufnr,
+         auart   TYPE aufk-auart,
+         iwerk   TYPE afih-iwerk,
+         erdat   TYPE aufk-erdat,
+         gstrp   TYPE afko-gstrp,
+         gltrp   TYPE afko-gltrp,
+         msgtxt  TYPE string,
+         light   TYPE icon_d,
        END OF lty_log.
 
-*---------------------------------------------------------------------*
-* Global Tables and Variables
-*---------------------------------------------------------------------*
 DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
       gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY,
       gs_log    TYPE lty_log.
@@ -47,16 +31,13 @@ DATA: gv_user            TYPE sy-uname,
       gv_now             TYPE sy-datum,
       gv_user_authorized TYPE abap_bool VALUE abap_true.
 
-*---------------------------------------------------------------------*
-* Constants
-*---------------------------------------------------------------------*
 CONSTANTS:
-  gc_postp_l TYPE char1 VALUE 'L',   " Stock
-  gc_postp_n TYPE char1 VALUE 'N'.   " Non-stock
+  gc_postp_l TYPE char1 VALUE 'L',
+  gc_postp_n TYPE char1 VALUE 'N'.
 
 CONSTANTS:
   gc_light_green TYPE icon_d VALUE icon_led_green,
   gc_light_red   TYPE icon_d VALUE icon_led_red,
   gc_light_inact TYPE icon_d VALUE icon_led_inactive.
 
-DATA: gc_estat TYPE tj30-estat.   " filled dynamically
+DATA: gc_estat TYPE tj30-estat.
