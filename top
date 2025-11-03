@@ -1,34 +1,57 @@
-* ====================================================================
-* RICEFW ID.........: 7281
-* TR Number.........: D30K906626
-* Version...........: 1.0
-* Program...........: ZTR_A2R_KCMP_STATUS
-* Transaction Code..: SE38
-* Author............: HQ75177
-* Date..............: 27.10.2025
-* --------------------------------------------------------------------
-* Description.......: Set / Reset KCMP user status
-*                          for PM Orders (Kitting)
-* --------------------------------------------------------------------
-* Modification list.:
-* Date          Author    TR Number          Description
-* 27.10.2025   HQ75177    D30K907395    ENHANCED EVALUATION OF KITTING
-* ====================================================================
-REPORT ztr_a2r_kcmp_status.
+*&---------------------------------------------------------------------*
+*& Include ZTR_A2R_KCMP_STATUS_TOP
+*&---------------------------------------------------------------------*
 
-INCLUDE ztr_a2r_kcmp_status_top.
-INCLUDE ztr_a2r_kcmp_status_sel.
-INCLUDE ztr_a2r_kcmp_status_f01.
+TABLES: aufk, afih, afko, jest, resb, jsto, tj30, tj30t.
 
-INITIALIZATION.
-  PERFORM init_defaults.
+INCLUDE <icon>.   " For traffic light icons in ALV
 
-START-OF-SELECTION.
-  PERFORM validate_selection.
-  PERFORM fetch_orders.
-  PERFORM filter_by_jest.
-  PERFORM filter_has_components.
-  PERFORM evaluate_kitting.
-  PERFORM check_authorizations.
-  PERFORM update_user_status.
-  PERFORM display_execution_log.
+"--------------------------------------------------------------------*
+" Type Definitions
+"--------------------------------------------------------------------*
+TYPES: BEGIN OF lty_order,
+         aufnr TYPE aufk-aufnr,
+         auart TYPE aufk-auart,
+         iwerk TYPE afih-iwerk,
+         erdat TYPE aufk-erdat,
+         gstrp TYPE afko-gstrp,
+         gltrp TYPE afko-gltrp,
+         objnr TYPE aufk-objnr,
+       END OF lty_order.
+
+TYPES: BEGIN OF lty_log,
+         aufnr   TYPE aufk-aufnr,   " Order
+         auart   TYPE aufk-auart,   " Order Type
+         iwerk   TYPE afih-iwerk,   " Plant
+         erdat   TYPE aufk-erdat,   " Created On
+         gstrp   TYPE afko-gstrp,   " Basic Start
+         gltrp   TYPE afko-gltrp,   " Basic Finish
+         msgtxt  TYPE string,       " Status Message
+         light   TYPE icon_d,       " Result (traffic light)
+       END OF lty_log.
+
+"--------------------------------------------------------------------*
+" Global internal tables / variables
+"--------------------------------------------------------------------*
+DATA: gt_orders TYPE STANDARD TABLE OF lty_order WITH EMPTY KEY,
+      gt_log    TYPE STANDARD TABLE OF lty_log   WITH EMPTY KEY,
+      gs_log    TYPE lty_log.
+
+DATA: gv_user            TYPE sy-uname,
+      gv_now             TYPE sy-datum,
+      gv_user_authorized TYPE abap_bool VALUE abap_true.
+
+"--------------------------------------------------------------------*
+" Constants
+"--------------------------------------------------------------------*
+CONSTANTS:
+  gc_postp_l TYPE char1 VALUE 'L',  " Stock component
+  gc_postp_n TYPE char1 VALUE 'N'.  " Non-stock component
+
+CONSTANTS:
+  gc_light_green TYPE icon_d VALUE icon_led_green,     " Kitting complete
+  gc_light_red   TYPE icon_d VALUE icon_led_red,       " Incomplete
+  gc_light_inact TYPE icon_d VALUE icon_led_inactive.  " No components
+
+" KCMP internal status (filled dynamically later)
+DATA: gc_estat TYPE tj30-estat.
