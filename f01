@@ -1,77 +1,87 @@
 *---------------------------------------------------------------------*
-* FORM: evaluate_kitting
+* FORM: update_user_status
 *---------------------------------------------------------------------*
-FORM evaluate_kitting.
+FORM update_user_status.
 
-  DATA: lt_incomplete TYPE TABLE OF aufk-aufnr,
-        lv_kcmp_active TYPE abap_bool,
-        lv_estat TYPE jest-stat.
+  LOOP AT gt_log INTO DATA(ls_log) WHERE light = 'G' OR light = 'Y'.
 
-  "--------------------------------------------------------------*
-  " 1. Find orders with incomplete components
-  "--------------------------------------------------------------*
-  SELECT DISTINCT r~aufnr
-    FROM resb AS r
-    INNER JOIN aufk AS a ON a~aufnr = r~aufnr
-    WHERE a~aufnr IN @s_aufnr
-      AND a~auart IN @s_auart
-      AND r~xloek = @space
-      AND r~enmng < r~bdmng
-    INTO TABLE @lt_incomplete.
+    DATA: lt_header  TYPE TABLE OF bapi_alm_order_headers_i,
+          lt_status  TYPE TABLE OF bapi_alm_order_usrstat,
+          lt_methods TYPE TABLE OF bapi_alm_order_method,
+          lt_return  TYPE TABLE OF bapiret2,
+          ls_return  TYPE bapiret2,
+          lv_action  TYPE string.
 
-  "--------------------------------------------------------------*
-  " 2. Assign traffic light and message based on completeness
-  "--------------------------------------------------------------*
-  LOOP AT gt_orders INTO DATA(ls_order).
+    "--------------------------------------------------------------*
+    " Determine Action: SET or RESET
+    "--------------------------------------------------------------*
+    IF p_reset = abap_true.
+      lv_action = 'RESET'.
+    ELSE.
+      lv_action = 'SET'.
+    ENDIF.
 
-    " --- Check if KCMP status is already active in JEST
-    CLEAR lv_kcmp_active.
-    SELECT SINGLE stat
-      INTO @lv_estat
-      FROM jest
-      WHERE objnr = @ls_order-objnr
-        AND inact = @space
-        AND stat = @gc_estat.
+    "--------------------------------------------------------------*
+    " Prepare Header & Status Tables
+    "--------------------------------------------------------------*
+    APPEND VALUE #( orderid = ls_log-aufnr ) TO lt_header.
+
+    IF lv_action = 'SET'.
+      APPEND VALUE #( user_st_text = 'KCMP' langu = p_spras ) TO lt_status.
+    ELSE.
+      APPEND VALUE #( user_st_text = 'KCMP' inactive = abap_true langu = p_spras ) TO lt_status.
+    ENDIF.
+
+    "--------------------------------------------------------------*
+    " Define Methods
+    "--------------------------------------------------------------*
+    APPEND VALUE #( refnumber = '00001' objecttype = 'HEADER'
+                    method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
+    APPEND VALUE #( refnumber = '00002' objecttype = 'USERSTATUS'
+                    method = 'CHANGE' objectkey = ls_log-aufnr ) TO lt_methods.
+    APPEND VALUE #( refnumber = '00003' objecttype = 'ORDER'
+                    method = 'SAVE' objectkey = ls_log-aufnr ) TO lt_methods.
+
+    "--------------------------------------------------------------*
+    " Execute BAPI
+    "--------------------------------------------------------------*
+    CALL FUNCTION 'BAPI_ALM_ORDER_MAINTAIN'
+      TABLES
+        it_header     = lt_header
+        it_methods    = lt_methods
+        it_userstatus = lt_status
+        return        = lt_return.
+
+    "--------------------------------------------------------------*
+    " Analyze Return Messages
+    "--------------------------------------------------------------*
+    READ TABLE lt_return INTO ls_return WITH KEY type = 'E'.
 
     IF sy-subrc = 0.
-      lv_kcmp_active = abap_true.
-    ENDIF.
-
-    READ TABLE lt_incomplete WITH KEY aufnr = ls_order-aufnr TRANSPORTING NO FIELDS.
-
-    IF lv_kcmp_active = abap_true.
-      " KCMP already set
-      APPEND VALUE #( aufnr  = ls_order-aufnr
-                      auart  = ls_order-auart
-                      iwerk  = ls_order-iwerk
-                      erdat  = ls_order-erdat
-                      gstrp  = ls_order-gstrp
-                      gltrp  = ls_order-gltrp
-                      msgtxt = 'KCMP already active'
-                      light  = 'Y' ) TO gt_log.
-
-    ELSEIF sy-subrc = 0.
-      " Incomplete components
-      APPEND VALUE #( aufnr  = ls_order-aufnr
-                      auart  = ls_order-auart
-                      iwerk  = ls_order-iwerk
-                      erdat  = ls_order-erdat
-                      gstrp  = ls_order-gstrp
-                      gltrp  = ls_order-gltrp
-                      msgtxt = 'Incomplete components'
-                      light  = 'R' ) TO gt_log.
+      ls_log-msgtxt = ls_return-message.
+      ls_log-light  = 'R'.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
 
     ELSE.
-      " Ready to set KCMP
-      APPEND VALUE #( aufnr  = ls_order-aufnr
-                      auart  = ls_order-auart
-                      iwerk  = ls_order-iwerk
-                      erdat  = ls_order-erdat
-                      gstrp  = ls_order-gstrp
-                      gltrp  = ls_order-gltrp
-                      msgtxt = 'Ready to set KCMP'
-                      light  = 'G' ) TO gt_log.
+      IF lv_action = 'SET'.
+        ls_log-msgtxt = |KCMP set successfully (E0001)|.
+      ELSE.
+        ls_log-msgtxt = |KCMP reset successfully (E0002)|.
+      ENDIF.
+
+      ls_log-light = 'G'.
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'X'.
     ENDIF.
+
+    "--------------------------------------------------------------*
+    " Release Locks
+    "--------------------------------------------------------------*
+    PERFORM release_locks USING ls_log-aufnr.
+
+    MODIFY gt_log FROM ls_log.
 
   ENDLOOP.
 
