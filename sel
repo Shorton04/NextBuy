@@ -1,7 +1,3 @@
-*&---------------------------------------------------------------------*
-*& Include ZTR_A2R_KCMP_STATUS_SEL
-*&---------------------------------------------------------------------*
-
 SELECTION-SCREEN BEGIN OF BLOCK b01 WITH FRAME TITLE TEXT-s01.
   SELECT-OPTIONS:
     s_aufnr FOR aufk-aufnr,
