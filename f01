@@ -1,3 +1,6 @@
+*---------------------------------------------------------------------*
+* FORM: display_execution_log
+*---------------------------------------------------------------------*
 FORM display_execution_log.
 
   DATA: lo_alv  TYPE REF TO cl_salv_table,
@@ -11,12 +14,12 @@ FORM display_execution_log.
     EXIT.
   ENDIF.
 
-  " convert 'G'/'R'/'Y' to LED icons for SALV display
+  " -- Ensure the LIGHT field contains actual icon constants (ICON_D)
   LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
     CASE <fs_log>-light.
-      WHEN 'G'. <fs_log>-light = gc_light_green.
-      WHEN 'R'. <fs_log>-light = gc_light_red.
-      WHEN OTHERS. <fs_log>-light = gc_light_inact.
+      WHEN 'G'. <fs_log>-light = icon_led_green.
+      WHEN 'R'. <fs_log>-light = icon_led_red.
+      WHEN OTHERS. <fs_log>-light = icon_led_inactive.
     ENDCASE.
   ENDLOOP.
 
@@ -27,11 +30,17 @@ FORM display_execution_log.
         CHANGING
           t_table      = gt_log ).
 
-      lo_alv->get_functions( )->set_all( abap_true ).
+      " remove row selection column (no X)
+      lo_alv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>none ).
+
+      " disable extra ALV functions so toolbar is cleaner
+      lo_alv->get_functions( )->set_all( abap_false ).
+
+      " optimize column widths
       lo_cols = lo_alv->get_columns( ).
       lo_cols->set_optimize( abap_true ).
 
-      " Column headers (optional)
+      " optional: set column headers
       TRY. lo_col = lo_cols->get_column( 'AUFNR' ). lo_col->set_medium_text( 'Order' ). CATCH cx_salv_not_found. ENDTRY.
       TRY. lo_col = lo_cols->get_column( 'AUART' ). lo_col->set_medium_text( 'Order Type' ). CATCH cx_salv_not_found. ENDTRY.
       TRY. lo_col = lo_cols->get_column( 'IWERK' ). lo_col->set_medium_text( 'Plant' ). CATCH cx_salv_not_found. ENDTRY.
@@ -39,6 +48,7 @@ FORM display_execution_log.
       TRY. lo_col = lo_cols->get_column( 'GSTRP' ). lo_col->set_medium_text( 'Basic Start' ). CATCH cx_salv_not_found. ENDTRY.
       TRY. lo_col = lo_cols->get_column( 'GLTRP' ). lo_col->set_medium_text( 'Basic Finish' ). CATCH cx_salv_not_found. ENDTRY.
       TRY. lo_col = lo_cols->get_column( 'MSGTXT' ). lo_col->set_medium_text( 'Status Message' ). CATCH cx_salv_not_found. ENDTRY.
+      " no set_icon call here; SALV will render ICON_D automatically if the field contains icon constants
       TRY. lo_col = lo_cols->get_column( 'LIGHT' ). lo_col->set_medium_text( 'Result' ). CATCH cx_salv_not_found. ENDTRY.
 
       lo_alv->display( ).
