@@ -1,54 +1,69 @@
 *---------------------------------------------------------------------*
-* Report: ZCHECKLIST_MAINT_TASKS
-* Description: Checklist for periodic maintenance tasks
+* FORM: display_execution_log
 *---------------------------------------------------------------------*
-REPORT zchecklist_maint_tasks.
+FORM display_execution_log.
 
-*---------------------------------------------------------------------*
-* Selection Screen
-*---------------------------------------------------------------------*
-SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
-PARAMETERS: p_plant TYPE werks_d OBLIGATORY,
-            p_floc  TYPE iflot  DEFAULT '714-103',
-            p_class TYPE klah-class.
+  DATA: lo_alv  TYPE REF TO cl_salv_table,
+        lo_cols TYPE REF TO cl_salv_columns,
+        lo_col  TYPE REF TO cl_salv_column,
+        lx_msg  TYPE REF TO cx_salv_msg,
+        lx_nf   TYPE REF TO cx_salv_not_found.
 
-SELECTION-SCREEN END OF BLOCK b1.
+  IF gt_log IS INITIAL.
+    MESSAGE i006(ZA2R_KCMPMSG). "No data available to display.
+    EXIT.
+  ENDIF.
 
-SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.
-PARAMETERS: p_char TYPE cabn-atnam DEFAULT 'ELASTOMER_TYPE'.
+  " Convert 'G'/'R'/'Y' to LED icons for SALV display
+  LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
+    CASE <fs_log>-light.
+      WHEN 'G'. <fs_log>-light = icon_led_green.
+      WHEN 'R'. <fs_log>-light = icon_led_red.
+      WHEN OTHERS. <fs_log>-light = icon_led_inactive.
+    ENDCASE.
+  ENDLOOP.
 
-SELECT-OPTIONS: s_charval FOR cabn-atwrt.
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = lo_alv
+        CHANGING
+          t_table      = gt_log ).
 
-SELECTION-SCREEN END OF BLOCK b2.
+      " 🔹 Remove the 'X' checkbox column (no row selection)
+      lo_alv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>none ).
 
-SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE text-003.
-PARAMETERS: p_matfilt TYPE makt-maktx.
+      " 🔹 Disable built-in ALV functions (no extra toolbar items)
+      lo_alv->get_functions( )->set_all( abap_false ).
 
-SELECTION-SCREEN END OF BLOCK b3.
+      " 🔹 Optimize column widths
+      lo_cols = lo_alv->get_columns( ).
+      lo_cols->set_optimize( abap_true ).
 
-SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE text-004.
-SELECT-OPTIONS: s_mp FOR mplko-mpla.
+      " Column headers
+      TRY. lo_col = lo_cols->get_column( 'AUFNR' ). lo_col->set_medium_text( 'Order' ). CATCH cx_salv_not_found. ENDTRY.
+      TRY. lo_col = lo_cols->get_column( 'AUART' ). lo_col->set_medium_text( 'Order Type' ). CATCH cx_salv_not_found. ENDTRY.
+      TRY. lo_col = lo_cols->get_column( 'IWERK' ). lo_col->set_medium_text( 'Plant' ). CATCH cx_salv_not_found. ENDTRY.
+      TRY. lo_col = lo_cols->get_column( 'ERDAT' ). lo_col->set_medium_text( 'Created On' ). CATCH cx_salv_not_found. ENDTRY.
+      TRY. lo_col = lo_cols->get_column( 'GSTRP' ). lo_col->set_medium_text( 'Basic Start' ). CATCH cx_salv_not_found. ENDTRY.
+      TRY. lo_col = lo_cols->get_column( 'GLTRP' ). lo_col->set_medium_text( 'Basic Finish' ). CATCH cx_salv_not_found. ENDTRY.
+      TRY. lo_col = lo_cols->get_column( 'MSGTXT' ). lo_col->set_medium_text( 'Status Message' ). CATCH cx_salv_not_found. ENDTRY.
 
-SELECTION-SCREEN END OF BLOCK b4.
+      " 🔹 Ensure 'Result' column shows icons (not plain text)
+      TRY.
+          lo_col = lo_cols->get_column( 'LIGHT' ).
+          lo_col->set_medium_text( 'Result' ).
+          lo_col->set_icon( abap_true ).
+      CATCH cx_salv_not_found.
+      ENDTRY.
 
-SELECTION-SCREEN BEGIN OF BLOCK b5 WITH FRAME TITLE text-005.
-SELECT-OPTIONS: s_flstat FOR tj02t-istat.
+      " Display final ALV
+      lo_alv->display( ).
 
-SELECTION-SCREEN END OF BLOCK b5.
+    CATCH cx_salv_not_found INTO lx_nf.
+      MESSAGE lx_nf->get_text( ) TYPE 'I'.
+    CATCH cx_salv_msg INTO lx_msg.
+      MESSAGE lx_msg->get_text( ) TYPE 'I'.
+  ENDTRY.
 
-SELECTION-SCREEN BEGIN OF BLOCK b6 WITH FRAME TITLE text-006.
-PARAMETERS: p_test  RADIOBUTTON GROUP rad1 DEFAULT 'X' USER-COMMAND rad,
-            p_eff   RADIOBUTTON GROUP rad1.
-
-SELECTION-SCREEN END OF BLOCK b6.
-
-*---------------------------------------------------------------------*
-* Text Elements
-*---------------------------------------------------------------------*
-* text-001 = 'Selection Func.Location'
-* text-002 = 'Selection for Class characteristic value'
-* text-003 = 'Filter on Material text'
-* text-004 = 'Maint. plan selection'
-* text-005 = 'Admin. Data/Status Info'
-* text-006 = 'Mode Selection'
-*---------------------------------------------------------------------*
+ENDFORM.
