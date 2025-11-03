@@ -26,25 +26,16 @@
 *& 27.10.2025  HQ75177     D30K907395     Initial version
 *& 03.11.2025  MDRaymundo  D30K907821     Final corrections and FDS alignment
 *&---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+REPORT ztr_a2r_kcmp_status MESSAGE-ID za2r_kcmpmsg.
 
-REPORT ztr_a2r_kcmp_status.
+INCLUDE ztr_a2r_kcmp_status_top.
+INCLUDE ztr_a2r_kcmp_status_sel.
+INCLUDE ztr_a2r_kcmp_status_f01.
 
-*----------------------------------------------------------------------*
-* Include structure
-*----------------------------------------------------------------------*
-INCLUDE ztr_a2r_kcmp_status_top.    " Global data, types, constants
-INCLUDE ztr_a2r_kcmp_status_sel.    " Selection screen
-INCLUDE ztr_a2r_kcmp_status_f01.    " Main logic and forms
-
-*----------------------------------------------------------------------*
-* INITIALIZATION
-*----------------------------------------------------------------------*
 INITIALIZATION.
   PERFORM init_defaults.
 
-*----------------------------------------------------------------------*
-* START-OF-SELECTION
-*----------------------------------------------------------------------*
 START-OF-SELECTION.
   PERFORM validate_selection.
   PERFORM get_kcmp_status.
@@ -55,6 +46,3 @@ START-OF-SELECTION.
   PERFORM check_authorizations.
   PERFORM update_user_status.
   PERFORM display_execution_log.
-
-END-OF-SELECTION.
-* (Reserved for optional logging functionality)
