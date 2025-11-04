@@ -40,35 +40,30 @@ FORM prepare_items.
 
     LOOP AT gt_header ASSIGNING FIELD-SYMBOL(<ls_head>).
 
-      " Skip if long text indicator not set
+      " Skip if no long text indicator
       IF <ls_head>-ltknz <> 'X' OR <ls_head>-maintenance_item IS INITIAL.
         CONTINUE.
       ENDIF.
 
-      CLEAR: lt_lines, lv_name, lv_mitem.
+      CLEAR: lt_lines, lv_name, lv_mitem, ls_header.
 
+      " Format Maintenance Item properly for MPOS long text
       lv_mitem = <ls_head>-maintenance_item.
 
-      " Format Maintenance Item number (MPOS TDNAME is 16–17 chars)
       CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
         EXPORTING
           input  = lv_mitem
         IMPORTING
           output = lv_name.
 
-      " Ensure 16-char TDNAME for MPOS
-      IF strlen( lv_name ) < 16.
-        lv_name = |{ lv_name WIDTH = 16 ALIGN = RIGHT PAD = '0' }|.
-      ELSEIF strlen( lv_name ) > 16.
-        lv_name = lv_name+0(16).
-      ENDIF.
+      " Ensure exactly 16 characters (e.g., 0000000000040023)
+      lv_name = lv_name+0(16).
 
-      "=== First attempt (standard 16-char name) ===
       CALL FUNCTION 'READ_TEXT'
         EXPORTING
           client      = sy-mandt
           id          = 'LTXT'
-          language    = 'E'     " or sy-langu if multi-language texts exist
+          language    = 'EN'           " Change to sy-langu if needed
           name        = lv_name
           object      = 'MPOS'
         IMPORTING
@@ -79,26 +74,6 @@ FORM prepare_items.
           not_found   = 1
           OTHERS      = 2.
 
-      "=== Fallback attempt (some systems store 17-char TDNAME) ===
-      IF sy-subrc <> 0 OR lt_lines IS INITIAL.
-        lv_name = |0{ lv_name }|.
-        CALL FUNCTION 'READ_TEXT'
-          EXPORTING
-            client      = sy-mandt
-            id          = 'LTXT'
-            language    = 'E'
-            name        = lv_name
-            object      = 'MPOS'
-          IMPORTING
-            header      = ls_header
-          TABLES
-            lines       = lt_lines
-          EXCEPTIONS
-            not_found   = 1
-            OTHERS      = 2.
-      ENDIF.
-
-      "=== Add retrieved lines ===
       IF sy-subrc = 0 AND lt_lines IS NOT INITIAL.
         LOOP AT lt_lines ASSIGNING FIELD-SYMBOL(<ls_line>).
           APPEND VALUE ty_longtext(
@@ -116,7 +91,6 @@ FORM prepare_items.
           ) TO gt_item_combined.
         ENDLOOP.
       ELSE.
-        " Optional logging for debugging
         WRITE: / 'No long text found for item:', <ls_head>-maintenance_item,
                  ' TDNAME:', lv_name, ' SUBRC:', sy-subrc.
       ENDIF.
