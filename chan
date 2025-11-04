@@ -1,3 +1,202 @@
+*&---------------------------------------------------------------------*
+*& Include ZRE_A2R_MAINTPLAN_REPORT_F01
+*&---------------------------------------------------------------------*
+
+"---Selection screen dropdown
+FORM set_dropdown_values.
+
+  DATA: lt_values TYPE vrm_values,
+        ls_value  TYPE vrm_value.
+
+  CLEAR lt_values.
+
+  ls_value-key = 'Yes'.
+  ls_value-text = 'Yes'.
+  APPEND ls_value TO lt_values.
+
+  ls_value-key = 'No'.
+  ls_value-text = 'No'.
+  APPEND ls_value TO lt_values.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id     = 'P_OLIST'
+      values = lt_values.
+
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id     = 'P_LTXT'
+      values = lt_values.
+
+ENDFORM.
+
+"---ALV Display Get Data
+FORM get_data.
+
+*
+*
+*  SELECT a~warpl, MAX( aufnr ) AS lastorder
+*    FROM mhio
+*    INTO TABLE @DATA(lt_lastorder)
+*    WHERE warpl IN @so_warpl
+*    GROUP BY warpl.
+*
+*
+*  SELECT a~warpl, MIN( aufnr ) AS openorder
+*    FROM mhio
+*    INTO TABLE lt_openorder
+*    WHERE warpl IN @so_warpl
+*    AND addat IS INITIAL
+*    AND aufnr IS NOT INITIAL
+*    GROUP BY warpl.
+*
+*
+*  CLEAR gt_mhio_data.
+*
+*   LOOP AT lt_lastorder ASSIGNING FIELD-SYMBOL(<last>).
+*     APPEND VALUE ty_mhio_data(
+*       warpl    = <last>-warpl
+*       lastorder = <last>-lastorder ) TO gt_mhio_data.
+*   ENDLOOP.
+*
+*   LOOP AT lt_openorder ASSIGNING FIELD-SYMBOL(<open>).
+*     READ TABLE gt_mhio_data ASSIGNING FIELD-SYMBOL(<mhio>) WITH KEY warpl = <open>-warpl.
+*
+*   IF sy-subrc = 0.
+*     <mhio>-openorder = <open>-openorder.
+*    ELSE.
+*    APPEND VALUE ty_mhio_data(
+*     warpl = <open>-warpl
+*     openorder = <open>-openorder ) TO gt_mhio_data.
+*   ENDIF.
+*   ENDLOOP.
+
+
+  SELECT DISTINCT
+       a~iwerk AS maintenance_plant,
+       a~warpl AS maintenance_plan,
+       a~strat AS maintenance_strat,
+       a~mptyp AS maintenance_pcat,
+       a~begru AS maintenance_auth,
+       a~plan_sort AS maintenance_sort,
+       a~stadt AS maintenance_stadt,
+       a~wptxt AS maintenance_ptext,
+       a~ernam AS created_by,
+       a~ersdt AS created_on,
+       a~wapos AS maintenance_item,
+       a~tplnr AS functional_loc,
+       a~equnr AS equipment_no,
+       a~auart AS order_type,
+       c~arbpl AS work_center,
+       a~priok AS priority,
+       a~wpgrp AS planner_group,
+       a~ilart AS maintenance_actvt,
+       a~gsber AS business_area,
+       a~beber AS plant_section,
+       a~plnty AS task_list_type,
+       a~plnnr AS task_list_grp,
+       a~plnal AS task_list_cntr,
+       a~status AS item_status,
+       a~pstxt AS short_text,
+       a~objnr AS objnr,
+       ' '     AS maintenance_stat,
+
+  "----Additional Fields
+  a~horiz           AS horiz,
+  a~horiz_days      AS horiz_days,
+  a~horiz_qualifier AS horiz_qualifier,
+  a~kostl           AS kostl,
+  a~sfakt           AS sfakt,
+  a~vsneg           AS vsneg,
+  a~toneg           AS toneg,
+  a~fabkl           AS fabkl,
+  eq~eqktx          AS eqktx,
+  ifl~pltxt         AS pltxt,
+  mh~aufnr          AS aufnr,
+  a~vspos           AS vspos,
+  a~topos           AS topos,
+  a~laufn           AS laufn,
+  d~ktext           AS ktext,
+  a~ltknz           AS ltknz,
+  a~call_confirm    AS call_confirm,
+  a~andor           AS andor,
+  a~hunit           AS hunit,
+  a~stich           AS stich,
+  a~abrho           AS abrho,
+  a~iaufnr          AS iaufnr
+
+
+INTO CORRESPONDING FIELDS of TABLE @gt_header
+FROM vimpla AS a
+LEFT JOIN crhd  AS c    ON c~objty = a~objty AND c~objid = a~gewrk
+LEFT JOIN objk  AS b    ON b~obknr = a~obknr
+LEFT JOIN aufk  AS d    ON d~aufnr = a~laufn
+LEFT JOIN iflo  AS ifl  ON ifl~iloan = a~iloan AND ifl~spras = @sy-langu
+LEFT JOIN eqkt  AS eq   ON eq~equnr = a~equnr AND eq~spras = @sy-langu
+LEFT JOIN mhio  AS mh   ON mh~warpl = a~warpl
+LEFT JOIN jest  AS j    ON j~objnr = a~objnr AND j~inact = @space
+LEFT JOIN tj02t AS tj    ON tj~istat = j~stat  AND tj~spras = @sy-langu
+
+   WHERE a~iwerk IN @so_iwerk
+     AND a~warpl IN @so_warpl
+     AND a~mptyp IN @so_mptyp
+     AND a~strat IN @so_strat
+     AND a~begru IN @so_begru
+     AND a~plan_sort IN @so_psort
+     AND a~stadt IN @so_stadt
+     AND a~wptxt IN @so_wptxt
+     AND a~ernam IN @so_ernam
+     AND a~ersdt IN @so_ersdt
+     AND a~wapos IN @so_wapos
+     AND a~tplnr IN @s_itplnr
+     AND a~equnr IN @so_equnr
+     AND a~auart IN @so_auart
+     AND c~arbpl IN @so_arbpl
+     AND a~priok IN @so_priok
+     AND a~wpgrp IN @so_wpgrp
+     AND a~ilart IN @so_ilart
+     AND a~gsber IN @so_gsber
+     AND a~beber IN @so_beber
+     AND a~plnnr IN @so_plnnr
+     AND a~status IN @so_stat
+     AND a~pstxt IN @so_stxt.
+
+  LOOP AT gt_header ASSIGNING FIELD-SYMBOL(<ls_head>).
+*    "Get MHIO data
+*    READ TABLE gt_mhio_data INTO DATA(ls_mhio)
+*       WITH KEY warpl = <ls_head>-maintenance_plan.
+*
+*    IF sy-subrc = 0.
+*       <ls_head>-lastorder = ls_mhio-lastorder.
+*       <ls_head>-openorder = ls_mhio-openorder.
+*    ENDIF.
+
+    " Fetch values
+    DATA(lt_status) = VALUE string_table( ).
+    SELECT tj02t~txt04
+      INTO TABLE @DATA(lt_txts)
+      FROM jest
+      INNER JOIN tj02t
+        ON jest~stat  = tj02t~istat
+       AND tj02t~spras = @sy-langu
+      WHERE jest~objnr = @<ls_head>-objnr
+        AND jest~inact = @space.
+
+    CLEAR <ls_head>-maintenance_stat.
+    LOOP AT lt_txts ASSIGNING FIELD-SYMBOL(<lv_txt>).
+      CONCATENATE <ls_head>-maintenance_stat <lv_txt>
+             INTO <ls_head>-maintenance_stat SEPARATED BY space.
+    ENDLOOP.
+
+  ENDLOOP.
+
+
+
+ENDFORM.
+
+"--- Object list and Long Text
+
 FORM prepare_items.
   DATA: lt_lines   TYPE TABLE OF tline,
         lv_name    TYPE tdobname,
@@ -106,4 +305,277 @@ FORM prepare_items.
   gt_item_backup = gt_item_combined.
 
   PERFORM apply_alv_filters.
+ENDFORM.
+
+
+
+"---ALV Display Header
+FORM display_header_alv.
+  DATA: lt_fieldcat TYPE slis_t_fieldcat_alv.
+
+  lt_fieldcat = VALUE slis_t_fieldcat_alv(
+    ( fieldname = 'MAINTENANCE_PLANT' seltext_m = 'Maint. Plant' outputlen = 10 )
+    ( fieldname = 'MAINTENANCE_PLAN' seltext_m = 'Maint.Plan' key = 'X' outputlen = 12 )
+    ( fieldname = 'MAINTENANCE_STRAT' seltext_m = 'Strategy' outputlen = 10 )
+    ( fieldname = 'MAINTENANCE_PCAT' seltext_m = 'Category' outputlen = 10 )
+    ( fieldname = 'MAINTENANCE_AUTH' seltext_m = 'Auth.Group' outputlen = 10 )
+    ( fieldname = 'MAINTENANCE_SORT' seltext_m = 'Sort Field' outputlen = 10 )
+    ( fieldname = 'START_CYCLE' seltext_m = 'Start Cycle' outputlen = 10 )
+    ( fieldname = 'MAINTENANCE_PTEXT' seltext_m = 'Plan Text' outputlen = 40 )
+    ( fieldname = 'MAINTENANCE_STAT' seltext_m = 'Status' outputlen = 30 )
+    ( fieldname = 'CREATED_BY' seltext_m = 'Created By' outputlen = 12 )
+    ( fieldname = 'CREATED_ON' seltext_m = 'Created On' outputlen = 10 )
+    ( fieldname = 'MAINTENANCE_ITEM' seltext_m = 'Item' outputlen = 8 )
+    ( fieldname = 'FUNCTIONAL_LOC' seltext_m = 'Func. Location' outputlen = 30 )
+    ( fieldname = 'EQUIPMENT_NO' seltext_m = 'Equipment' outputlen = 18 )
+    ( fieldname = 'ORDER_TYPE' seltext_m = 'Order Type' outputlen = 10 )
+    ( fieldname = 'WORK_CENTER' seltext_m = 'Work Center' outputlen = 12 )
+    ( fieldname = 'PRIORITY' seltext_m = 'Priority' outputlen = 8 )
+    ( fieldname = 'PLANNER_GROUP' seltext_m = 'Planner Group' outputlen = 12 )
+    ( fieldname = 'MAINTENANCE_ACTVT' seltext_m = 'Activity Type' outputlen = 12 )
+    ( fieldname = 'BUSINESS_AREA' seltext_m = 'Business Area' outputlen = 12 )
+    ( fieldname = 'PLANT_SECTION' seltext_m = 'Plant Section' outputlen = 12 )
+    ( fieldname = 'TASK_LIST_TYPE' seltext_m = 'Task Type' outputlen = 10 )
+    ( fieldname = 'TASK_LIST_GRP' seltext_m = 'Task Group' outputlen = 12 )
+    ( fieldname = 'TASK_LIST_CNTR' seltext_m = 'Task Counter' outputlen = 12 )
+    ( fieldname = 'ITEM_STATUS' seltext_m = 'Item Status' outputlen = 10 )
+    ( fieldname = 'SHORT_TEXT' seltext_m = 'Short Text' outputlen = 40 )
+    ( fieldname = 'EXPAND' seltext_m = '' outputlen = 40 )
+
+    "----Additional Fields
+    ( fieldname = 'HORIZ' seltext_m = 'Call Horizon' outputlen = 40 )
+    ( fieldname = 'HORIZ_DAYS' seltext_m = 'Call Horizon (Days)' outputlen = 40 )
+    ( fieldname = 'HORIZ_QUALIFIER' seltext_m = 'Calculation Type of Call Horizon' outputlen = 40 )
+    ( fieldname = 'KOSTL' seltext_m = 'Cost Center' outputlen = 40 )
+    ( fieldname = 'SFAKT' seltext_m = 'Cycle Modification Factor' outputlen = 40 )
+    ( fieldname = 'VSNEG' seltext_m = 'Shift Factor for Early Completion' outputlen = 40 )
+    ( fieldname = 'TONEG' seltext_m = 'Tolerance for Early Completion (%)' outputlen = 40 )
+    ( fieldname = 'FABKL' seltext_m = 'Factory Calendar' outputlen = 40 )
+    ( fieldname = 'EQKTX' seltext_m = 'Equipment Description' outputlen = 40 )
+    ( fieldname = 'PLTXT' seltext_m = 'Functional Location Description' outputlen = 40 )
+    ( fieldname = 'AUFNR' seltext_m = 'Last Order Completed' outputlen = 40 )
+    ( fieldname = 'VSPOS' seltext_m = 'Shift Factor for Late Completion' outputlen = 40 )
+    ( fieldname = 'TOPOS' seltext_m = 'Tolerance for Late Completion' outputlen = 40 )
+    ( fieldname = 'LAUFN' seltext_m = 'Last Call' outputlen = 40 )
+    ( fieldname = 'KTEXT' seltext_m = 'Last Call Text' outputlen = 40 )
+    ( fieldname = 'LTKNZ' seltext_m = 'Long Text Indicator' outputlen = 40 )
+    ( fieldname = 'CALL_CONFIRM' seltext_m = 'Only Call After Completion' outputlen = 40 )
+  "  ( fieldname = 'OPENORDER' seltext_m = 'Open Order' outputlen = 40 )
+    ( fieldname = 'ANDOR' seltext_m = 'Operation Type' outputlen = 40 )
+    ( fieldname = 'HUNIT' seltext_m = 'Scheduling Interval Unit' outputlen = 40 )
+    ( fieldname = 'STICH' seltext_m = 'Scheduling indicator' outputlen = 40 )
+    ( fieldname = 'ABRHO' seltext_m = 'Scheduling Period' outputlen = 40 )
+    ( fieldname = 'IAUFNR' seltext_m = 'Settlement Order' outputlen = 40 )
+
+  ).
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program      = sy-repid
+      i_callback_user_command = 'USER_COMMAND'
+      i_save                  = 'A'
+      it_fieldcat             = lt_fieldcat
+    TABLES
+      t_outtab                = gt_header
+    EXCEPTIONS
+      program_error           = 1
+      OTHERS                  = 2.
+
+  IF sy-subrc <> 0.
+    MESSAGE 'Error displaying grid ALV' TYPE 'I'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* USER COMMAND: BUTTON ACTIONS
+*---------------------------------------------------------------------*
+FORM user_command_hier USING r_ucomm TYPE sy-ucomm
+                             rs_selfield TYPE slis_selfield.
+    CASE r_ucomm.
+
+    WHEN '&OLIST'.
+      IF gv_show_ltxt = abap_true.
+        MESSAGE 'Hide the Long Text view to display the Object List.' TYPE 'I'.
+        RETURN.
+      ENDIF.
+
+      IF gv_show_olist = abap_true.
+        gv_show_olist = abap_false.
+      ELSE.
+        gv_show_olist = abap_true.
+      ENDIF.
+
+      PERFORM apply_alv_filters.
+      rs_selfield-refresh = 'X'.
+
+    WHEN '&LTXT'.
+      IF gv_show_olist = abap_true.
+        MESSAGE 'Hide the Object List view to display the Long Text.' TYPE 'I'.
+        RETURN.
+      ENDIF.
+
+      IF gv_show_ltxt = abap_true.
+        gv_show_ltxt = abap_false.
+      ELSE.
+        gv_show_ltxt = abap_true.
+      ENDIF.
+
+      PERFORM apply_alv_filters.
+      rs_selfield-refresh = 'X'.
+
+  ENDCASE.
+ENDFORM.
+*---------------------------------------------------------------------*
+* DISPLAY HIERARCHICAL ALV
+*---------------------------------------------------------------------*
+FORM display_hier_alv.
+  DATA: lt_header        TYPE STANDARD TABLE OF ty_header,
+        lt_item          TYPE STANDARD TABLE OF ty_item_combined,
+        lt_fieldcat      TYPE slis_t_fieldcat_alv,
+        ls_layout        TYPE slis_layout_alv,
+        ls_keyinfo       TYPE slis_keyinfo_alv.
+
+  " Prepare data
+  lt_header = gt_header.
+  lt_item   = gt_item_combined.
+
+  IF lt_header IS INITIAL.
+    MESSAGE 'No data found for display' TYPE 'I'.
+    RETURN.
+  ENDIF.
+
+
+  lt_fieldcat = VALUE slis_t_fieldcat_alv(
+
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_PLAN'  seltext_m = 'Maint. Plan' key = 'X' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_PLANT' seltext_m = 'Plant' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_STRAT' seltext_m = 'Strategy' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_PCAT' seltext_m = 'Category' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_AUTH' seltext_m = 'Auth.Group' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_SORT' seltext_m = 'Sort Field' )
+    ( tabname = 'LT_HEADER' fieldname = 'START_CYCLE' seltext_m = 'Start Cycle' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_PTEXT' seltext_m = 'Plan Text' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_STAT' seltext_m = 'Status' )
+    ( tabname = 'LT_HEADER' fieldname = 'CREATED_BY' seltext_m = 'Created By' )
+    ( tabname = 'LT_HEADER' fieldname = 'CREATED_ON' seltext_m = 'Created On' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_ITEM' seltext_m = 'Item' )
+    ( tabname = 'LT_HEADER' fieldname = 'FUNCTIONAL_LOC' seltext_m = 'Func. Location' )
+    ( tabname = 'LT_HEADER' fieldname = 'EQUIPMENT_NO' seltext_m = 'Equipment' )
+    ( tabname = 'LT_HEADER' fieldname = 'ORDER_TYPE' seltext_m = 'Order Type' )
+    ( tabname = 'LT_HEADER' fieldname = 'WORK_CENTER' seltext_m = 'Work Center' )
+    ( tabname = 'LT_HEADER' fieldname = 'PRIORITY' seltext_m = 'Priority' )
+    ( tabname = 'LT_HEADER' fieldname = 'PLANNER_GROUP' seltext_m = 'Planner Group' )
+    ( tabname = 'LT_HEADER' fieldname = 'MAINTENANCE_ACTVT' seltext_m = 'Activity Type' )
+    ( tabname = 'LT_HEADER' fieldname = 'BUSINESS_AREA' seltext_m = 'Business Area' )
+    ( tabname = 'LT_HEADER' fieldname = 'PLANT_SECTION' seltext_m = 'Plant Section' )
+    ( tabname = 'LT_HEADER' fieldname = 'TASK_LIST_TYPE' seltext_m = 'Task Type' )
+    ( tabname = 'LT_HEADER' fieldname = 'TASK_LIST_GRP' seltext_m = 'Task Group' )
+    ( tabname = 'LT_HEADER' fieldname = 'TASK_LIST_CNTR' seltext_m = 'Task Counter' )
+    ( tabname = 'LT_HEADER' fieldname = 'ITEM_STATUS' seltext_m = 'Item Status' )
+    ( tabname = 'LT_HEADER' fieldname = 'SHORT_TEXT' seltext_m = 'Short Text' )
+    ( tabname = 'LT_HEADER' fieldname = 'EXPAND' seltext_m = '' )
+    "----Additional Fields
+    ( tabname = 'LT_HEADER' fieldname = 'HORIZ' seltext_m = 'Call Horizon' )
+    ( tabname = 'LT_HEADER' fieldname = 'HORIZ_DAYS' seltext_m = 'Call Horizon (Days)' )
+    ( tabname = 'LT_HEADER' fieldname = 'HORIZ_QUALIFIER' seltext_m = 'Calculation Type of Call Horizon' )
+    ( tabname = 'LT_HEADER' fieldname = 'KOSTL' seltext_m = 'Cost Center' )
+    ( tabname = 'LT_HEADER' fieldname = 'SFAKT' seltext_m = 'Cycle Modification Factor' )
+    ( tabname = 'LT_HEADER' fieldname = 'VSNEG' seltext_m = 'Shift Factor for Early Completion' )
+    ( tabname = 'LT_HEADER' fieldname = 'TONEG' seltext_m = 'Tolerance for Early Completion (%)' )
+    ( tabname = 'LT_HEADER' fieldname = 'FABKL' seltext_m = 'Factory Calendar' )
+    ( tabname = 'LT_HEADER' fieldname = 'EQKTX' seltext_m = 'Equipment Description' )
+    ( tabname = 'LT_HEADER' fieldname = 'PLTXT' seltext_m = 'Functional Location Description' )
+    ( tabname = 'LT_HEADER' fieldname = 'AUFNR' seltext_m = 'Last Order Completed' )
+    ( tabname = 'LT_HEADER' fieldname = 'VSPOS' seltext_m = 'Shift Factor for Late Completion' )
+    ( tabname = 'LT_HEADER' fieldname = 'TOPOS' seltext_m = 'Tolerance for Late Completion' )
+    ( tabname = 'LT_HEADER' fieldname = 'LAUFN' seltext_m = 'Last Call' )
+    ( tabname = 'LT_HEADER' fieldname = 'KTEXT' seltext_m = 'Last Call Text' )
+    ( tabname = 'LT_HEADER' fieldname = 'LTKNZ' seltext_m = 'Long Text Indicator' )
+    ( tabname = 'LT_HEADER' fieldname = 'CALL_CONFIRM' seltext_m = 'Only Call After Completion' )
+   " ( tabname = 'LT_HEADER' fieldname = 'OPENORDER' seltext_m = 'Open Order' )
+    ( tabname = 'LT_HEADER' fieldname = 'ANDOR' seltext_m = 'Operation Type' )
+    ( tabname = 'LT_HEADER' fieldname = 'HUNIT' seltext_m = 'Scheduling Interval Unit' )
+    ( tabname = 'LT_HEADER' fieldname = 'STICH' seltext_m = 'Scheduling indicator' )
+    ( tabname = 'LT_HEADER' fieldname = 'ABRHO' seltext_m = 'Scheduling Period' )
+    ( tabname = 'LT_HEADER' fieldname = 'IAUFNR' seltext_m = 'Settlement Order' )
+
+    " --- ITEM Fields
+    ( tabname = 'gt_item_combined' fieldname = 'MAINTENANCE_PLAN' no_out = 'X' key = 'X' )
+    ( tabname = 'gt_item_combined' fieldname = 'ITEM_TYPE'        seltext_m = 'Type' )
+    ( tabname = 'gt_item_combined' fieldname = 'TPLNR'            seltext_m = 'Func. Location'  )
+    ( tabname = 'gt_item_combined' fieldname = 'EQUNR'            seltext_m = 'Equipment' )
+    ( tabname = 'gt_item_combined' fieldname = 'TDFORMAT'         seltext_m = 'Format'  )
+    ( tabname = 'gt_item_combined' fieldname = 'TDLINE'           seltext_m = 'Long Text'  )
+  ).
+
+  " --- Layout and Key Info
+  ls_layout-zebra             = 'X'.
+  ls_layout-colwidth_optimize = 'X'.
+  ls_layout-window_titlebar = 'Maintenance Plan and Items Report'.
+  ls_layout-expand_fieldname = 'expand'.
+  ls_layout-expand_all = ''.
+
+  ls_keyinfo-header01 = 'MAINTENANCE_PLAN'.
+  ls_keyinfo-item01   = 'MAINTENANCE_PLAN'.
+
+  " --- Call the Function
+  CALL FUNCTION 'REUSE_ALV_HIERSEQ_LIST_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+      i_callback_pf_status_set = 'SET_PF_STATUS'
+      i_callback_user_command = 'USER_COMMAND_HIER'
+      is_layout          = ls_layout
+      it_fieldcat       = lt_fieldcat
+      i_tabname_header   = 'LT_HEADER'
+      i_tabname_item     = 'gt_item_combined'
+      is_keyinfo         = ls_keyinfo
+
+    TABLES
+      t_outtab_header    = lt_header
+      t_outtab_item      = gt_item_combined
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+
+  IF sy-subrc <> 0.
+    MESSAGE 'Error displaying hierarchical ALV' TYPE 'I'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Display GUI status
+*---------------------------------------------------------------------*
+FORM set_pf_status USING rt_extab TYPE slis_t_extab.
+
+  IF gv_show_olist = abap_true.
+    gv_btn_olist = ' Hide Object List'.
+  ELSE.
+    gv_btn_olist = 'Show Object List'.
+  ENDIF.
+
+  IF gv_show_ltxt = abap_true.
+    gv_btn_ltxt = 'Hide Long Text'.
+  ELSE.
+    gv_btn_ltxt = 'Show Long Text'.
+  ENDIF.
+
+
+  SET PF-STATUS 'ZSTANDARD'.
+
+ ENDFORM.
+
+*---------------------------------------------------------------------*
+* Hide rows function
+*---------------------------------------------------------------------*
+
+FORM apply_alv_filters.
+  gt_item_combined = gt_item_backup.
+
+  IF gv_show_olist = abap_false.
+    DELETE gt_item_combined WHERE item_type = 'OBJLIST'.
+  ENDIF.
+
+  IF gv_show_ltxt = abap_false.
+    DELETE gt_item_combined WHERE item_type = 'LONGTEXT'.
+  ENDIF.
 ENDFORM.
