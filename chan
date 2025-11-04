@@ -1,69 +1,27 @@
-*---------------------------------------------------------------------*
-* FORM: display_execution_log
-*---------------------------------------------------------------------*
-FORM display_execution_log.
+DATA: lt_lines TYPE TABLE OF tline,
+      ls_header TYPE thead,
+      lv_longtext TYPE string.
 
-  DATA: lo_alv  TYPE REF TO cl_salv_table,
-        lo_cols TYPE REF TO cl_salv_columns,
-        lo_col  TYPE REF TO cl_salv_column,
-        lx_msg  TYPE REF TO cx_salv_msg,
-        lx_nf   TYPE REF TO cx_salv_not_found.
+CALL FUNCTION 'READ_TEXT'
+  EXPORTING
+    client             = sy-mandt
+    object             = 'MPOS'      " Operation text object
+    id                 = 'LTXT'      " Text ID for operation long text
+    name               = lv_aufnr    " Maintenance order number
+    language           = sy-langu
+    archive_handle     = space
+    use_old_persistence= ' '
+  IMPORTING
+    header             = ls_header
+  TABLES
+    lines              = lt_lines
+  EXCEPTIONS
+    not_found          = 1
+    access_denied      = 2
+    OTHERS             = 3.
 
-  IF gt_log IS INITIAL.
-    MESSAGE i006(ZA2R_KCMPMSG). "No data available to display.
-    EXIT.
-  ENDIF.
-
-  " Convert 'G'/'R' to LED icons for SALV display
-  LOOP AT gt_log ASSIGNING FIELD-SYMBOL(<fs_log>).
-    CASE <fs_log>-light.
-      WHEN 'G'. <fs_log>-light = icon_led_green.
-      WHEN 'R'. <fs_log>-light = icon_led_red.
-      WHEN OTHERS. <fs_log>-light = icon_led_inactive.
-    ENDCASE.
+IF sy-subrc = 0.
+  LOOP AT lt_lines INTO DATA(ls_line).
+    CONCATENATE lv_longtext ls_line-tdline CL_ABAP_CHAR_UTILITIES=>NEWLINE INTO lv_longtext.
   ENDLOOP.
-
-  TRY.
-      cl_salv_table=>factory(
-        IMPORTING
-          r_salv_table = lo_alv
-        CHANGING
-          t_table      = gt_log ).
-
-      "  Remove the 'X' checkbox column (no row selection)
-      lo_alv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>none ).
-
-      "  Disable built-in ALV functions (no extra toolbar items)
-      lo_alv->get_functions( )->set_all( abap_false ).
-
-      "  Optimize column widths
-      lo_cols = lo_alv->get_columns( ).
-      lo_cols->set_optimize( abap_true ).
-
-      " Column headers
-      TRY. lo_col = lo_cols->get_column( 'AUFNR' ). lo_col->set_medium_text( 'Order' ). CATCH cx_salv_not_found. ENDTRY.
-      TRY. lo_col = lo_cols->get_column( 'AUART' ). lo_col->set_medium_text( 'Order Type' ). CATCH cx_salv_not_found. ENDTRY.
-      TRY. lo_col = lo_cols->get_column( 'IWERK' ). lo_col->set_medium_text( 'Plant' ). CATCH cx_salv_not_found. ENDTRY.
-      TRY. lo_col = lo_cols->get_column( 'ERDAT' ). lo_col->set_medium_text( 'Created On' ). CATCH cx_salv_not_found. ENDTRY.
-      TRY. lo_col = lo_cols->get_column( 'GSTRP' ). lo_col->set_medium_text( 'Basic Start' ). CATCH cx_salv_not_found. ENDTRY.
-      TRY. lo_col = lo_cols->get_column( 'GLTRP' ). lo_col->set_medium_text( 'Basic Finish' ). CATCH cx_salv_not_found. ENDTRY.
-      TRY. lo_col = lo_cols->get_column( 'MSGTXT' ). lo_col->set_medium_text( 'Status Message' ). CATCH cx_salv_not_found. ENDTRY.
-
-      "  Ensure 'Result' column shows icons (not plain text)
-      TRY.
-          lo_col = lo_cols->get_column( 'LIGHT' ).
-          lo_col->set_medium_text( 'Result' ).
-          lo_col->set_icon( abap_true ).
-      CATCH cx_salv_not_found.
-      ENDTRY.
-
-      " Display final ALV
-      lo_alv->display( ).
-
-    CATCH cx_salv_not_found INTO lx_nf.
-      MESSAGE lx_nf->get_text( ) TYPE 'I'.
-    CATCH cx_salv_msg INTO lx_msg.
-      MESSAGE lx_msg->get_text( ) TYPE 'I'.
-  ENDTRY.
-
-ENDFORM.
+ENDIF.
