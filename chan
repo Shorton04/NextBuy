@@ -2,7 +2,7 @@ FORM prepare_items.
   DATA: lt_lines   TYPE TABLE OF tline,
         lv_name    TYPE tdobname,
         ls_header  TYPE thead,
-        lv_wapos   TYPE tdobname.
+        lv_mitem   TYPE tdobname.
 
   CLEAR: gt_objlist, gt_longtext, gt_item_combined, gt_item_backup.
 
@@ -40,33 +40,35 @@ FORM prepare_items.
 
     LOOP AT gt_header ASSIGNING FIELD-SYMBOL(<ls_head>).
 
-      " Skip if no long text indicator or item missing
+      " Skip if long text indicator not set
       IF <ls_head>-ltknz <> 'X' OR <ls_head>-maintenance_item IS INITIAL.
         CONTINUE.
       ENDIF.
 
-      CLEAR: lt_lines, lv_name, lv_wapos.
+      CLEAR: lt_lines, lv_name, lv_mitem.
 
-      lv_wapos = <ls_head>-maintenance_item.
+      lv_mitem = <ls_head>-maintenance_item.
 
-      " Ensure correct format (MPOS expects 16-char TDNAME)
+      " Format Maintenance Item number (MPOS TDNAME is 16–17 chars)
       CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
         EXPORTING
-          input  = lv_wapos
+          input  = lv_mitem
         IMPORTING
           output = lv_name.
 
+      " Ensure 16-char TDNAME for MPOS
       IF strlen( lv_name ) < 16.
         lv_name = |{ lv_name WIDTH = 16 ALIGN = RIGHT PAD = '0' }|.
       ELSEIF strlen( lv_name ) > 16.
         lv_name = lv_name+0(16).
       ENDIF.
 
+      "=== First attempt (standard 16-char name) ===
       CALL FUNCTION 'READ_TEXT'
         EXPORTING
           client      = sy-mandt
           id          = 'LTXT'
-          language    = sy-langu
+          language    = 'E'     " or sy-langu if multi-language texts exist
           name        = lv_name
           object      = 'MPOS'
         IMPORTING
@@ -77,6 +79,26 @@ FORM prepare_items.
           not_found   = 1
           OTHERS      = 2.
 
+      "=== Fallback attempt (some systems store 17-char TDNAME) ===
+      IF sy-subrc <> 0 OR lt_lines IS INITIAL.
+        lv_name = |0{ lv_name }|.
+        CALL FUNCTION 'READ_TEXT'
+          EXPORTING
+            client      = sy-mandt
+            id          = 'LTXT'
+            language    = 'E'
+            name        = lv_name
+            object      = 'MPOS'
+          IMPORTING
+            header      = ls_header
+          TABLES
+            lines       = lt_lines
+          EXCEPTIONS
+            not_found   = 1
+            OTHERS      = 2.
+      ENDIF.
+
+      "=== Add retrieved lines ===
       IF sy-subrc = 0 AND lt_lines IS NOT INITIAL.
         LOOP AT lt_lines ASSIGNING FIELD-SYMBOL(<ls_line>).
           APPEND VALUE ty_longtext(
@@ -93,9 +115,13 @@ FORM prepare_items.
             tdline           = <ls_line>-tdline
           ) TO gt_item_combined.
         ENDLOOP.
+      ELSE.
+        " Optional logging for debugging
+        WRITE: / 'No long text found for item:', <ls_head>-maintenance_item,
+                 ' TDNAME:', lv_name, ' SUBRC:', sy-subrc.
       ENDIF.
-    ENDLOOP.
 
+    ENDLOOP.
   ELSE.
     gv_show_ltxt = abap_false.
   ENDIF.
