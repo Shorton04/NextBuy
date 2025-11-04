@@ -5,8 +5,8 @@
 *& TR Number.........: D30K906626
 *& Version...........: 1.1 (Final Functional)
 *& Program...........: ZTR_A2R_KCMP_STATUS
-*& Transaction Code..: ZKCMP_STATUS
-*& Author............: HQ75177 / Marc Dexter Raymundo
+*& Transaction Code..: ZA2R_KCMPCOMP
+*& Author............: HQ75177
 *& Date..............: 03.11.2025
 *&---------------------------------------------------------------------*
 *& Description:
@@ -24,7 +24,7 @@
 *&---------------------------------------------------------------------*
 *& Date        Author      TR Number      Description
 *& 27.10.2025  HQ75177     D30K907395     Initial version
-*& 03.11.2025  MDRaymundo  D30K907821     Final corrections and FDS alignment
+*& 03.11.2025  HQ75177     D30K908156     Final corrections and FDS alignment
 *&---------------------------------------------------------------------*
 *---------------------------------------------------------------------*
 REPORT ztr_a2r_kcmp_status MESSAGE-ID za2r_kcmpmsg.
